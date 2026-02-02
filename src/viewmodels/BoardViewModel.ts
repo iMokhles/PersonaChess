@@ -93,10 +93,11 @@ export class BoardViewModel {
    * This is synchronous for immediate UI feedback, just like the example
    */
   makeMove(from: Square, to: Square, promotion: string = 'q'): boolean {
-    log('[BoardViewModel] makeMove called', { from, to, promotion });
+    log('[BoardViewModel] makeMove called', { from, to, promotion, currentFen: this.fen, currentTurn: this.chess.turn() });
     
     try {
       // Try to make the move according to chess.js logic (exactly like the example)
+      // chess.js will validate the move automatically
       const move = this.chess.move({
         from,
         to,
@@ -104,6 +105,7 @@ export class BoardViewModel {
       });
 
       if (move) {
+        log('[BoardViewModel] Move successful:', move.san);
         // Update the position state to trigger a re-render (via MobX observable)
         this.updateState();
         this.lastMove = { from, to };
@@ -113,6 +115,7 @@ export class BoardViewModel {
         
         // Make engine move after a short delay (similar to the example's setTimeout)
         if (this.autoPlayEnabled && !this.isGameOver) {
+          log('[BoardViewModel] Scheduling auto-play...');
           setTimeout(() => {
             this.solveNextMove().catch(err => {
               console.error('[BoardViewModel] Auto-play error:', err);
@@ -123,10 +126,12 @@ export class BoardViewModel {
         // Return true as the move was successful
         return true;
       } else {
+        log('[BoardViewModel] Move failed - chess.js returned null');
         // Return false as the move was not successful
         return false;
       }
-    } catch {
+    } catch (err) {
+      log('[BoardViewModel] Move exception:', err);
       // Return false as the move was not successful
       return false;
     }

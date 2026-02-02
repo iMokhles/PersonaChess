@@ -94,6 +94,10 @@ export class StockfishService {
    * Handle incoming message from engine
    */
   private handleMessage(message: string): void {
+    // Log all messages for debugging
+    if (message && (message.startsWith('info') || message.startsWith('bestmove') || message.includes('ready'))) {
+      console.log('[StockfishService] Message:', message);
+    }
     this.messageHandlers.forEach(handler => handler(message));
   }
 
@@ -156,25 +160,102 @@ export class StockfishService {
   async analyzePosition(fen: string): Promise<AnalyzedMove[]> {
     await this.waitForReady();
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const moves: Map<number, StockfishInfo> = new Map();
       let bestScore = 0;
+      let hasReceivedBestMove = false;
+      let maxDepthReached = 0;
+
+      // Helper function to complete analysis with collected moves
+      const completeAnalysis = () => {
+        if (hasReceivedBestMove) return;
+        hasReceivedBestMove = true;
+        this.removeMessageHandler(analysisHandler);
+
+        console.log('[StockfishService] Completing analysis, collected', moves.size, 'moves');
+
+        // Convert to AnalyzedMove array
+        const analyzedMoves: AnalyzedMove[] = [];
+        
+        for (let i = 1; i <= this.multiPV; i++) {
+          const info = moves.get(i);
+          if (info && info.pv.length > 0) {
+            const evalLoss = Math.abs(bestScore - info.score);
+            analyzedMoves.push({
+              move: info.pv[0],
+              evaluation: info.score,
+              evalLoss,
+              pv: info.pv,
+              multipv: info.multipv,
+              depth: info.depth,
+            });
+          }
+        }
+
+        if (analyzedMoves.length > 0) {
+          console.log('[StockfishService] Returning', analyzedMoves.length, 'analyzed moves');
+          resolve(analyzedMoves);
+        } else {
+          console.error('[StockfishService] No moves collected');
+          reject(new Error('No moves collected from analysis'));
+        }
+      };
+
+      // Add timeout to force stop after reasonable time
+      const forceStopTimeout = setTimeout(() => {
+        if (!hasReceivedBestMove) {
+          console.log('[StockfishService] Forcing stop after 10 seconds to get bestmove');
+          this.sendCommand('stop');
+          // Give it a moment to respond with bestmove
+          setTimeout(() => {
+            if (!hasReceivedBestMove) {
+              console.log('[StockfishService] No bestmove after stop, using collected moves');
+              completeAnalysis();
+            }
+          }, 1000);
+        }
+      }, 10000); // 10 second timeout to force stop
+
+      // Add absolute timeout to prevent hanging
+      const absoluteTimeout = setTimeout(() => {
+        if (!hasReceivedBestMove) {
+          console.error('[StockfishService] Analysis timeout after 30 seconds');
+          this.removeMessageHandler(analysisHandler);
+          clearTimeout(forceStopTimeout);
+          completeAnalysis(); // Try to use what we have
+        }
+      }, 30000); // 30 second absolute timeout
 
       const analysisHandler = (message: string) => {
+        console.log('[StockfishService] Received message:', message);
+        
         // Parse info lines
         if (message.startsWith('info') && message.includes('multipv')) {
           const info = this.parseInfoLine(message);
           if (info) {
+            console.log('[StockfishService] Parsed info:', info);
             moves.set(info.multipv, info);
             if (info.multipv === 1) {
               bestScore = info.score;
+              maxDepthReached = Math.max(maxDepthReached, info.depth);
+              
+              // If we've reached the target depth and have enough moves, we can stop early
+              if (info.depth >= this.depth && moves.size >= Math.min(3, this.multiPV)) {
+                console.log('[StockfishService] Reached target depth, stopping early');
+                this.sendCommand('stop');
+              }
             }
           }
         }
 
         // Analysis complete
         if (message.startsWith('bestmove')) {
+          hasReceivedBestMove = true;
+          clearTimeout(forceStopTimeout);
+          clearTimeout(absoluteTimeout);
           this.removeMessageHandler(analysisHandler);
+
+          console.log('[StockfishService] Received bestmove, collected', moves.size, 'moves');
 
           // Convert to AnalyzedMove array
           const analyzedMoves: AnalyzedMove[] = [];
@@ -194,17 +275,30 @@ export class StockfishService {
             }
           }
 
+          console.log('[StockfishService] Returning', analyzedMoves.length, 'analyzed moves');
           resolve(analyzedMoves);
         }
       };
 
       this.addMessageHandler(analysisHandler);
 
+      // Wait for readyok before sending position
+      const readyHandler = (msg: string) => {
+        if (msg === 'readyok') {
+          this.removeMessageHandler(readyHandler);
+          console.log('[StockfishService] Engine ready, sending position and starting analysis');
+          this.sendCommand(`position fen ${fen}`);
+          this.sendCommand(`go depth ${this.depth}`);
+        }
+      };
+      this.addMessageHandler(readyHandler);
+
       // Send position and start analysis
+      console.log('[StockfishService] Starting analysis for FEN:', fen);
+      console.log('[StockfishService] Config: MultiPV=', this.multiPV, 'Depth=', this.depth);
+      
       this.sendCommand(`setoption name MultiPV value ${this.multiPV}`);
       this.sendCommand('isready');
-      this.sendCommand(`position fen ${fen}`);
-      this.sendCommand(`go depth ${this.depth}`);
     });
   }
 
