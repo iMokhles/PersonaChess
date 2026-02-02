@@ -31,7 +31,6 @@ export class BoardViewModel {
       loadFen: action,
       loadPgn: action,
       makeMove: action,
-      makeMoveSync: action,
       solveNextMove: action,
       reset: action,
       undo: action,
@@ -90,28 +89,14 @@ export class BoardViewModel {
   }
 
   /**
-   * Make a move synchronously (for immediate UI update)
-   * This is called from the drag handler to update the board immediately
+   * Make a move on the board (similar to the example pattern)
+   * This is synchronous for immediate UI feedback, just like the example
    */
-  makeMoveSync(from: Square, to: Square, promotion?: string): boolean {
-    log('[BoardViewModel] makeMoveSync called', { from, to, promotion, currentTurn: this.chess.turn() });
+  makeMove(from: Square, to: Square, promotion: string = 'q'): boolean {
+    log('[BoardViewModel] makeMove called', { from, to, promotion });
     
     try {
-      // Check if it's the correct turn
-      const piece = this.chess.get(from);
-      if (!piece) {
-        log('[BoardViewModel] No piece at source square');
-        return false;
-      }
-      
-      const isWhitePiece = piece.color === 'w';
-      const isWhiteTurn = this.chess.turn() === 'w';
-      
-      if (isWhitePiece !== isWhiteTurn) {
-        log('[BoardViewModel] Wrong turn - piece color:', piece.color, 'current turn:', this.chess.turn());
-        return false;
-      }
-      
+      // Try to make the move according to chess.js logic (exactly like the example)
       const move = this.chess.move({
         from,
         to,
@@ -119,61 +104,46 @@ export class BoardViewModel {
       });
 
       if (move) {
-        log('[BoardViewModel] Move successful:', move.san);
+        // Update the position state to trigger a re-render (via MobX observable)
         this.updateState();
         this.lastMove = { from, to };
         this.lastPlayedBucket = null;
         this.statusMessage = `You played: ${move.san}`;
         engineViewModel.reset();
         
-        // Trigger auto-play asynchronously in the background
+        // Make engine move after a short delay (similar to the example's setTimeout)
         if (this.autoPlayEnabled && !this.isGameOver) {
-          log('[BoardViewModel] Scheduling auto-play...');
-          // Use requestIdleCallback or setTimeout to not block
           setTimeout(() => {
             this.solveNextMove().catch(err => {
               console.error('[BoardViewModel] Auto-play error:', err);
             });
-          }, 300);
+          }, 500); // Similar delay to the example
         }
         
+        // Return true as the move was successful
         return true;
       } else {
-        log('[BoardViewModel] Move failed - chess.js returned null');
+        // Return false as the move was not successful
         return false;
       }
-    } catch (err) {
-      console.error('[BoardViewModel] makeMoveSync exception:', err);
+    } catch {
+      // Return false as the move was not successful
       return false;
     }
   }
 
   /**
-   * Make a move on the board (async version for programmatic use)
-   * @param skipAutoPlay - If true, skip auto-playing engine move (used by engine itself)
+   * Make a move from UCI notation (e.g., "e2e4")
+   * Used by the engine
    */
-  async makeMove(from: Square, to: Square, promotion?: string, skipAutoPlay: boolean = false): Promise<boolean> {
-    // For drag and drop, use sync version for immediate feedback
-    if (!skipAutoPlay) {
-      return this.makeMoveSync(from, to, promotion);
-    }
+  async makeMoveUCI(uci: string): Promise<boolean> {
+    if (uci.length < 4) return false;
     
-    // For engine moves, use async version
-    log('[BoardViewModel] makeMove (async) called', { from, to, promotion });
+    const from = uci.slice(0, 2) as Square;
+    const to = uci.slice(2, 4) as Square;
+    const promotion = uci.length > 4 ? uci[4] : undefined;
     
     try {
-      const piece = this.chess.get(from);
-      if (!piece) {
-        return false;
-      }
-      
-      const isWhitePiece = piece.color === 'w';
-      const isWhiteTurn = this.chess.turn() === 'w';
-      
-      if (isWhitePiece !== isWhiteTurn) {
-        return false;
-      }
-      
       const move = this.chess.move({
         from,
         to,
@@ -189,25 +159,9 @@ export class BoardViewModel {
         return true;
       }
       return false;
-    } catch (err) {
-      console.error('[BoardViewModel] makeMove exception:', err);
+    } catch {
       return false;
     }
-  }
-
-  /**
-   * Make a move from UCI notation (e.g., "e2e4")
-   * This is used by the engine, so it doesn't trigger auto-play
-   */
-  async makeMoveUCI(uci: string): Promise<boolean> {
-    if (uci.length < 4) return false;
-    
-    const from = uci.slice(0, 2) as Square;
-    const to = uci.slice(2, 4) as Square;
-    const promotion = uci.length > 4 ? uci[4] : undefined;
-    
-    // Skip auto-play when engine makes a move
-    return await this.makeMove(from, to, promotion, true);
   }
 
   /**
@@ -241,7 +195,7 @@ export class BoardViewModel {
       const result = engineViewModel.pickMoveFromBuckets(configViewModel.bucketConfig);
 
       if (result) {
-        // Apply the picked move (without triggering auto-play)
+        // Apply the picked move
         const moveSuccess = await this.makeMoveUCI(result.move.move);
         
         if (moveSuccess) {

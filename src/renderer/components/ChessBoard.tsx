@@ -2,6 +2,11 @@
  * ChessBoard Component
  * View layer - React component for displaying the chess board
  * Uses react-chessboard and observes BoardViewModel
+ * 
+ * This follows a similar pattern to the example, but maintains MVVM architecture:
+ * - Chess instance is in ViewModel (not in component)
+ * - Position state is managed by MobX (not useState)
+ * - Move logic is in ViewModel (not in component)
  */
 
 import React, { useCallback, useState, useMemo } from 'react';
@@ -27,25 +32,32 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
 }) => {
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
 
-  // Use synchronous version for immediate UI feedback
+  // Handle piece drop - similar to the example pattern
+  // The difference: we call ViewModel instead of Chess directly
   const handlePieceDrop = useCallback((
     sourceSquare: Square,
     targetSquare: Square
   ): boolean => {
     log('[ChessBoard] handlePieceDrop called', { sourceSquare, targetSquare });
     
-    // Use sync version for immediate board update
-    const result = boardViewModel.makeMoveSync(sourceSquare, targetSquare);
-    
-    log('[ChessBoard] makeMove result:', result);
-    
+    // Type narrow targetSquare potentially being null (e.g. if dropped off board)
+    if (!targetSquare) {
+      return false;
+    }
+
+    // Try to make the move according to chess.js logic (via ViewModel)
+    // This is exactly like the example, but the Chess instance is in ViewModel
+    const result = boardViewModel.makeMove(sourceSquare, targetSquare);
+
     if (result) {
       setSelectedSquare(null);
-      log('[ChessBoard] Move successful, cleared selection');
+      log('[ChessBoard] Move successful');
+      // Note: Auto-play happens automatically in ViewModel (like setTimeout in example)
     } else {
-      log('[ChessBoard] Move failed - invalid move');
+      log('[ChessBoard] Move failed');
     }
-    
+
+    // Return true as the move was successful, false otherwise
     return result;
   }, []);
 
@@ -54,7 +66,7 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
     
     if (selectedSquare) {
       // If we have a selected square, try to make a move
-      const result = boardViewModel.makeMoveSync(selectedSquare, square);
+      const result = boardViewModel.makeMove(selectedSquare, square);
       log('[ChessBoard] Click move result:', result);
       
       if (result) {
@@ -113,12 +125,13 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
 
   log('[ChessBoard] Rendering with FEN:', boardViewModel.fen, 'Turn:', boardViewModel.turn);
 
+  // Set the chessboard options (similar to the example)
   return (
     <div className="chessboard-container">
       <div className="board-wrapper">
         <Chessboard
-          position={boardViewModel.fen}
-          onPieceDrop={handlePieceDrop}
+          position={boardViewModel.fen} // Position from ViewModel (like chessPosition in example)
+          onPieceDrop={handlePieceDrop} // Handler (same pattern as example)
           onSquareClick={handleSquareClick}
           arePiecesDraggable={true}
           boardWidth={boardWidth}
