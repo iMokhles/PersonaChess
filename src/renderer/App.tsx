@@ -11,7 +11,7 @@ import { engineViewModel } from '../viewmodels';
 import './App.css';
 
 // Fixed board size
-const BOARD_SIZE = 500;
+const BOARD_SIZE = 250;
 
 export const App: React.FC = observer(() => {
   // Initialize engine on mount

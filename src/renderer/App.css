@@ -59,7 +59,7 @@
 }
 
 .board-section {
-  flex-shrink: 0;
+  flex-shrink: 1;
 }
 
 .controls-section {
