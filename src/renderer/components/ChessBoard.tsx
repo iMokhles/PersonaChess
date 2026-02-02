@@ -18,7 +18,7 @@ interface ChessBoardProps {
 }
 
 // Set to true for debugging, false for production
-const DEBUG = false;
+const DEBUG = true;
 
 const log = (...args: any[]) => {
   if (DEBUG) console.log(...args);
@@ -37,8 +37,11 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
    * Similar to the example pattern
    */
   const getMoveOptions = useCallback((square: Square): boolean => {
+    log('[ChessBoard] getMoveOptions called for square:', square);
+    
     // Get the moves for the square (from ViewModel)
     const moves = boardViewModel.getLegalMoves(square);
+    log('[ChessBoard] Found', moves.length, 'legal moves for', square);
 
     // If no moves, clear the option squares
     if (moves.length === 0) {
@@ -54,21 +57,29 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
       const pieceAtTarget = boardViewModel.getPieceAt(move.to);
       const pieceAtSource = boardViewModel.getPieceAt(square);
       
-      newSquares[move.to] = {
-        background: pieceAtTarget && pieceAtTarget.color !== pieceAtSource?.color
-          ? 'radial-gradient(circle, rgba(0,0,0,.1) 85%, transparent 85%)' // larger circle for capturing
-          : 'radial-gradient(circle, rgba(0,0,0,.1) 25%, transparent 25%)', // smaller circle for moving
-        borderRadius: '50%'
-      };
+      if (pieceAtTarget && pieceAtTarget.color !== pieceAtSource?.color) {
+        // Larger circle for capturing (more visible)
+        newSquares[move.to] = {
+          background: 'radial-gradient(circle, rgba(0,0,0,.3) 85%, transparent 85%)',
+          borderRadius: '50%'
+        };
+      } else {
+        // Smaller circle for moving (more visible)
+        newSquares[move.to] = {
+          background: 'radial-gradient(circle, rgba(0,0,0,.2) 25%, transparent 25%)',
+          borderRadius: '50%'
+        };
+      }
     }
 
     // Set the square clicked to move from to yellow
     newSquares[square] = {
-      background: 'rgba(255, 255, 0, 0.4)'
+      backgroundColor: 'rgba(255, 255, 0, 0.4)'
     };
 
     // Set the option squares
     setOptionSquares(newSquares);
+    log('[ChessBoard] Set option squares:', Object.keys(newSquares));
 
     // Return true to indicate that there are move options
     return true;
@@ -79,15 +90,28 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
    */
   const handleSquareClick = useCallback((square: Square) => {
     log('[ChessBoard] handleSquareClick called', { square, moveFrom });
+    
+    // Get piece at clicked square
+    const piece = boardViewModel.getPieceAt(square);
+    const currentTurn = boardViewModel.turn;
+    
+    log('[ChessBoard] Piece at square:', piece, 'Current turn:', currentTurn);
 
-    // Piece clicked to move
+    // Piece clicked to move (must be piece of current turn)
     if (!moveFrom) {
-      // Get the move options for the square
-      const hasMoveOptions = getMoveOptions(square);
+      // Only show moves if there's a piece and it's the correct turn
+      if (piece && piece.color === currentTurn) {
+        // Get the move options for the square
+        const hasMoveOptions = getMoveOptions(square);
 
-      // If move options, set the moveFrom to the square
-      if (hasMoveOptions) {
-        setMoveFrom(square);
+        // If move options, set the moveFrom to the square
+        if (hasMoveOptions) {
+          setMoveFrom(square);
+          log('[ChessBoard] Set moveFrom to:', square);
+        }
+      } else {
+        log('[ChessBoard] No piece or wrong turn, clearing options');
+        setOptionSquares({});
       }
 
       // Return early
@@ -97,15 +121,20 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
     // Square clicked to move to, check if valid move
     const moves = boardViewModel.getLegalMoves(moveFrom);
     const foundMove = moves.find(m => m.from === moveFrom && m.to === square);
+    log('[ChessBoard] Looking for move from', moveFrom, 'to', square, 'Found:', foundMove);
 
     // Not a valid move
     if (!foundMove) {
-      // Check if clicked on new piece
-      const hasMoveOptions = getMoveOptions(square);
-
-      // If new piece, setMoveFrom, otherwise clear moveFrom
-      setMoveFrom(hasMoveOptions ? square : null);
-      if (!hasMoveOptions) {
+      // Check if clicked on new piece of current turn
+      if (piece && piece.color === currentTurn) {
+        const hasMoveOptions = getMoveOptions(square);
+        setMoveFrom(hasMoveOptions ? square : null);
+        if (!hasMoveOptions) {
+          setOptionSquares({});
+        }
+      } else {
+        // Clear selection if clicked on empty square or wrong piece
+        setMoveFrom(null);
         setOptionSquares({});
       }
 
@@ -114,20 +143,26 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
     }
 
     // Is normal move - try to make it
+    log('[ChessBoard] Making move from', moveFrom, 'to', square);
     const moveSuccess = boardViewModel.makeMove(moveFrom, square);
 
     if (moveSuccess) {
       // Clear moveFrom and optionSquares
       setMoveFrom(null);
       setOptionSquares({});
+      log('[ChessBoard] Move successful, cleared selection');
       // Note: Auto-play happens automatically in ViewModel
     } else {
+      log('[ChessBoard] Move failed');
       // If invalid, setMoveFrom and getMoveOptions
-      const hasMoveOptions = getMoveOptions(square);
-
-      // If new piece, setMoveFrom, otherwise clear moveFrom
-      if (hasMoveOptions) {
-        setMoveFrom(square);
+      if (piece && piece.color === currentTurn) {
+        const hasMoveOptions = getMoveOptions(square);
+        if (hasMoveOptions) {
+          setMoveFrom(square);
+        } else {
+          setMoveFrom(null);
+          setOptionSquares({});
+        }
       } else {
         setMoveFrom(null);
         setOptionSquares({});
@@ -168,7 +203,8 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
     const styles: Record<string, React.CSSProperties> = { ...optionSquares };
     
     // Highlight last move (if not already highlighted by option squares)
-    if (boardViewModel.lastMove) {
+    if (boardViewModel.lastMove && !moveFrom) {
+      // Only show last move highlight if no piece is selected
       if (!styles[boardViewModel.lastMove.from]) {
         styles[boardViewModel.lastMove.from] = {
           backgroundColor: 'rgba(255, 255, 0, 0.4)',
@@ -181,10 +217,11 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
       }
     }
 
+    log('[ChessBoard] Custom square styles:', Object.keys(styles));
     return styles;
-  }, [optionSquares, boardViewModel.lastMove]);
+  }, [optionSquares, boardViewModel.lastMove, moveFrom]);
 
-  log('[ChessBoard] Rendering with FEN:', boardViewModel.fen, 'Turn:', boardViewModel.turn);
+  log('[ChessBoard] Rendering with FEN:', boardViewModel.fen, 'Turn:', boardViewModel.turn, 'MoveFrom:', moveFrom);
 
   // Set the chessboard options (similar to the example)
   return (
