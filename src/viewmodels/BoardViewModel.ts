@@ -25,6 +25,7 @@ export class BoardViewModel {
   statusMessage: string = 'Ready';
   isThinking: boolean = false;
   autoPlayEnabled: boolean = true; // Auto-play engine moves after human moves
+  enginePlaysFor: 'w' | 'b' = 'b'; // Which side the engine plays for (default: black)
 
   constructor() {
     makeAutoObservable(this, {
@@ -35,6 +36,7 @@ export class BoardViewModel {
       reset: action,
       undo: action,
       setAutoPlay: action,
+      setEnginePlaysFor: action,
     });
     
     log('[BoardViewModel] Initialized with FEN:', this.fen);
@@ -46,6 +48,14 @@ export class BoardViewModel {
   setAutoPlay(enabled: boolean): void {
     this.autoPlayEnabled = enabled;
     log('[BoardViewModel] Auto-play set to:', enabled);
+  }
+
+  /**
+   * Set which side the engine plays for
+   */
+  setEnginePlaysFor(side: 'w' | 'b'): void {
+    this.enginePlaysFor = side;
+    log('[BoardViewModel] Engine plays for:', side === 'w' ? 'White' : 'Black');
   }
 
   /**
@@ -113,9 +123,12 @@ export class BoardViewModel {
         this.statusMessage = `You played: ${move.san}`;
         engineViewModel.reset();
         
-        // Make engine move after a short delay (similar to the example's setTimeout)
-        if (this.autoPlayEnabled && !this.isGameOver) {
-          log('[BoardViewModel] Scheduling auto-play...');
+        // Make engine move after a short delay if:
+        // 1. Auto-play is enabled
+        // 2. Game is not over
+        // 3. It's now the engine's turn (the turn changed after the human move)
+        if (this.autoPlayEnabled && !this.isGameOver && this.chess.turn() === this.enginePlaysFor) {
+          log('[BoardViewModel] Scheduling auto-play for engine side:', this.enginePlaysFor);
           setTimeout(() => {
             this.solveNextMove().catch(err => {
               console.error('[BoardViewModel] Auto-play error:', err);
@@ -249,27 +262,46 @@ export class BoardViewModel {
   }
 
   /**
-   * Undo the last move (or last two moves if auto-play is on)
+   * Undo the last move (or last two moves if auto-play is on and engine just moved)
    */
   undo(): boolean {
     log('[BoardViewModel] undo called, history length:', this.history.length);
     
-    // If auto-play is enabled, undo both the engine move and the human move
+    // If auto-play is enabled and the last move was by the engine, undo both moves
     if (this.autoPlayEnabled && this.history.length >= 2) {
-      const move1 = this.chess.undo();
-      const move2 = this.chess.undo();
+      // Check if the last move was by the engine
+      const lastMove = this.history[this.history.length - 1];
+      const lastMoveColor = lastMove.color;
       
-      if (move1 && move2) {
-        this.updateState();
-        this.lastMove = null;
-        this.lastPlayedBucket = null;
-        this.statusMessage = 'Undid last 2 moves (human + engine)';
-        engineViewModel.reset();
-        log('[BoardViewModel] Undid 2 moves');
-        return true;
+      // If last move was by engine, undo both (engine move + human move)
+      if (lastMoveColor === this.enginePlaysFor) {
+        const move1 = this.chess.undo();
+        const move2 = this.chess.undo();
+        
+        if (move1 && move2) {
+          this.updateState();
+          this.lastMove = null;
+          this.lastPlayedBucket = null;
+          this.statusMessage = 'Undid last 2 moves (human + engine)';
+          engineViewModel.reset();
+          log('[BoardViewModel] Undid 2 moves');
+          return true;
+        }
+      } else {
+        // Last move was by human, just undo one
+        const move = this.chess.undo();
+        if (move) {
+          this.updateState();
+          this.lastMove = null;
+          this.lastPlayedBucket = null;
+          this.statusMessage = 'Move undone';
+          engineViewModel.reset();
+          log('[BoardViewModel] Undid 1 move');
+          return true;
+        }
       }
     } else {
-      // Undo just one move
+      // Auto-play disabled or not enough moves, undo just one move
       const move = this.chess.undo();
       if (move) {
         this.updateState();

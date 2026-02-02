@@ -52,11 +52,16 @@ export const ControlPanel: React.FC = observer(() => {
     boardViewModel.setAutoPlay(!boardViewModel.autoPlayEnabled);
   }, []);
 
+  const handleSetEnginePlaysFor = useCallback((side: 'w' | 'b') => {
+    boardViewModel.setEnginePlaysFor(side);
+  }, []);
+
   const isThinking = boardViewModel.isThinking;
   const lastBucket = boardViewModel.lastPlayedBucket;
   const statusMessage = boardViewModel.statusMessage;
   const canUndo = boardViewModel.canUndo;
   const autoPlayEnabled = boardViewModel.autoPlayEnabled;
+  const enginePlaysFor = boardViewModel.enginePlaysFor;
 
   return (
     <div className="control-panel">
@@ -99,9 +104,32 @@ export const ControlPanel: React.FC = observer(() => {
         </label>
         <span className="toggle-hint">
           {autoPlayEnabled 
-            ? 'Engine will play automatically after your moves' 
+            ? `Engine will play automatically for ${enginePlaysFor === 'w' ? 'White' : 'Black'}` 
             : 'Click "Solve Next Move" to play engine manually'}
         </span>
+        
+        {/* Engine Side Selection */}
+        {autoPlayEnabled && (
+          <div className="engine-side-selection">
+            <label className="side-select-label">Engine plays for:</label>
+            <div className="side-buttons">
+              <button
+                className={`side-btn ${enginePlaysFor === 'w' ? 'active' : ''}`}
+                onClick={() => handleSetEnginePlaysFor('w')}
+                disabled={isThinking}
+              >
+                White
+              </button>
+              <button
+                className={`side-btn ${enginePlaysFor === 'b' ? 'active' : ''}`}
+                onClick={() => handleSetEnginePlaysFor('b')}
+                disabled={isThinking}
+              >
+                Black
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Engine Status */}
@@ -145,9 +173,19 @@ export const ControlPanel: React.FC = observer(() => {
           className="btn btn-secondary btn-undo"
           onClick={handleUndo}
           disabled={!canUndo}
-          title={autoPlayEnabled ? 'Undo last 2 moves (your move + engine move)' : 'Undo last move'}
+          title={
+            autoPlayEnabled && boardViewModel.history.length >= 2 && 
+            boardViewModel.history[boardViewModel.history.length - 1]?.color === enginePlaysFor
+              ? 'Undo last 2 moves (your move + engine move)' 
+              : 'Undo last move'
+          }
         >
-          ↶ Undo {autoPlayEnabled && canUndo ? '(2 moves)' : ''}
+          ↶ Undo {
+            autoPlayEnabled && boardViewModel.history.length >= 2 && 
+            boardViewModel.history[boardViewModel.history.length - 1]?.color === enginePlaysFor
+              ? '(2 moves)' 
+              : ''
+          }
         </button>
         <button 
           className="btn btn-secondary"

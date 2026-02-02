@@ -40,6 +40,20 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
   const getMoveOptions = useCallback((square: Square): boolean => {
     log('[ChessBoard] getMoveOptions called for square:', square);
     
+    // Check if user can move this piece (when auto-play is enabled)
+    if (boardViewModel.autoPlayEnabled) {
+      const piece = boardViewModel.getPieceAt(square);
+      if (piece) {
+        const pieceColor = piece.color; // 'w' or 'b'
+        // User can only move pieces of the side that engine is NOT playing for
+        if (pieceColor === boardViewModel.enginePlaysFor) {
+          log('[ChessBoard] Cannot move engine\'s pieces when auto-play is enabled');
+          setOptionSquares({});
+          return false;
+        }
+      }
+    }
+    
     // Get the moves for the square (from ViewModel instead of chessGame)
     const moves = boardViewModel.getLegalMoves(square);
     log('[ChessBoard] Found', moves.length, 'legal moves for', square);
@@ -85,6 +99,15 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
    */
   const handleSquareClick = useCallback(({ square, piece }: { square: Square; piece?: string }) => {
     log('[ChessBoard] onSquareClick called', { square, piece, moveFrom });
+
+    // Check if user can move this piece (when auto-play is enabled)
+    if (boardViewModel.autoPlayEnabled && piece) {
+      const pieceAtSquare = boardViewModel.getPieceAt(square);
+      if (pieceAtSquare && pieceAtSquare.color === boardViewModel.enginePlaysFor) {
+        log('[ChessBoard] Cannot click engine\'s pieces when auto-play is enabled');
+        return;
+      }
+    }
 
     // Piece clicked to move (exactly like the example)
     if (!moveFrom && piece) {
@@ -163,6 +186,15 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
     // Type narrow targetSquare potentially being null (e.g. if dropped off board)
     if (!targetSquare) {
       return false;
+    }
+
+    // Check if user can move this piece (when auto-play is enabled)
+    if (boardViewModel.autoPlayEnabled) {
+      const piece = boardViewModel.getPieceAt(sourceSquare);
+      if (piece && piece.color === boardViewModel.enginePlaysFor) {
+        log('[ChessBoard] Cannot drag engine\'s pieces when auto-play is enabled');
+        return false;
+      }
     }
 
     // Try to make the move according to chess.js logic (via ViewModel)
