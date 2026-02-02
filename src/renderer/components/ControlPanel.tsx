@@ -48,6 +48,14 @@ export const ControlPanel: React.FC = observer(() => {
     boardViewModel.undo();
   }, []);
 
+  const handleUndoSingle = useCallback(() => {
+    boardViewModel.undoSingle();
+  }, []);
+
+  const handleRedoSingle = useCallback(() => {
+    boardViewModel.redoSingle();
+  }, []);
+
   const handleToggleAutoPlay = useCallback(() => {
     boardViewModel.setAutoPlay(!boardViewModel.autoPlayEnabled);
   }, []);
@@ -60,6 +68,7 @@ export const ControlPanel: React.FC = observer(() => {
   const lastBucket = boardViewModel.lastPlayedBucket;
   const statusMessage = boardViewModel.statusMessage;
   const canUndo = boardViewModel.canUndo;
+  const canRedo = boardViewModel.canRedo;
   const autoPlayEnabled = boardViewModel.autoPlayEnabled;
   const enginePlaysFor = boardViewModel.enginePlaysFor;
 
@@ -171,27 +180,43 @@ export const ControlPanel: React.FC = observer(() => {
       <div className="secondary-actions">
         <button 
           className="btn btn-secondary btn-undo"
-          onClick={handleUndo}
-          disabled={!canUndo}
-          title={
-            autoPlayEnabled && boardViewModel.history.length >= 2 && 
-            boardViewModel.history[boardViewModel.history.length - 1]?.color === enginePlaysFor
-              ? 'Undo last 2 moves (your move + engine move)' 
-              : 'Undo last move'
-          }
+          onClick={handleUndoSingle}
+          disabled={!canUndo || isThinking}
+          title="Undo last move"
         >
-          ↶ Undo {
+          ↶ Undo
+        </button>
+        <button 
+          className="btn btn-secondary btn-redo"
+          onClick={handleRedoSingle}
+          disabled={!canRedo || isThinking}
+          title="Redo last undone move"
+        >
+          ↷ Redo
+        </button>
+        <button 
+          className="btn btn-secondary"
+          onClick={handleReset}
+          disabled={isThinking}
+        >
+          Reset Board
+        </button>
+      </div>
+
+      {/* Legacy Undo Button (Disabled) */}
+      <div className="legacy-actions">
+        <button 
+          className="btn btn-secondary btn-undo-legacy"
+          onClick={handleUndo}
+          disabled={true}
+          title="Disabled - Use Undo/Redo buttons above"
+        >
+          ↶ Undo (Legacy - Disabled) {
             autoPlayEnabled && boardViewModel.history.length >= 2 && 
             boardViewModel.history[boardViewModel.history.length - 1]?.color === enginePlaysFor
               ? '(2 moves)' 
               : ''
           }
-        </button>
-        <button 
-          className="btn btn-secondary"
-          onClick={handleReset}
-        >
-          Reset Board
         </button>
       </div>
 

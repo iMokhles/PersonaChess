@@ -26,6 +26,7 @@ export class BoardViewModel {
   isThinking: boolean = false;
   autoPlayEnabled: boolean = true; // Auto-play engine moves after human moves
   enginePlaysFor: 'w' | 'b' = 'b'; // Which side the engine plays for (default: black)
+  private redoStack: Move[] = []; // Stack of moves that were undone for redo functionality
 
   constructor() {
     makeAutoObservable(this, {
@@ -35,6 +36,8 @@ export class BoardViewModel {
       solveNextMove: action,
       reset: action,
       undo: action,
+      undoSingle: action,
+      redoSingle: action,
       setAutoPlay: action,
       setEnginePlaysFor: action,
     });
@@ -66,6 +69,7 @@ export class BoardViewModel {
       log('[BoardViewModel] loadFen called:', fen);
       const newChess = new Chess(fen);
       this.chess = newChess;
+      this.redoStack = []; // Clear redo stack
       this.updateState();
       this.statusMessage = 'Position loaded';
       engineViewModel.reset();
@@ -87,6 +91,7 @@ export class BoardViewModel {
       const newChess = new Chess();
       newChess.loadPgn(pgn);
       this.chess = newChess;
+      this.redoStack = []; // Clear redo stack
       this.updateState();
       this.statusMessage = 'PGN loaded';
       engineViewModel.reset();
@@ -116,6 +121,8 @@ export class BoardViewModel {
 
       if (move) {
         log('[BoardViewModel] Move successful:', move.san);
+        // Clear redo stack when a new move is made
+        this.redoStack = [];
         // Update the position state to trigger a re-render (via MobX observable)
         this.updateState();
         this.lastMove = { from, to };
@@ -169,6 +176,8 @@ export class BoardViewModel {
       });
 
       if (move) {
+        // Clear redo stack when a new move is made
+        this.redoStack = [];
         this.updateState();
         this.lastMove = { from, to };
         this.lastPlayedBucket = null;
@@ -253,6 +262,7 @@ export class BoardViewModel {
   reset(): void {
     log('[BoardViewModel] reset called');
     this.chess = new Chess();
+    this.redoStack = []; // Clear redo stack
     this.updateState();
     this.lastMove = null;
     this.lastPlayedBucket = null;
@@ -424,10 +434,99 @@ export class BoardViewModel {
   }
 
   /**
+   * Undo a single move (for the new undo button)
+   */
+  undoSingle(): boolean {
+    log('[BoardViewModel] undoSingle called, history length:', this.history.length);
+    
+    if (this.history.length === 0) {
+      return false;
+    }
+    
+    const move = this.chess.undo();
+    if (move) {
+      // Add to redo stack
+      this.redoStack.push(move);
+      this.updateState();
+      
+      // Update lastMove if there are still moves in history
+      if (this.history.length > 0) {
+        const lastMoveInHistory = this.history[this.history.length - 1];
+        this.lastMove = { from: lastMoveInHistory.from as Square, to: lastMoveInHistory.to as Square };
+      } else {
+        this.lastMove = null;
+      }
+      
+      this.lastPlayedBucket = null;
+      this.statusMessage = 'Undid 1 move';
+      engineViewModel.reset();
+      log('[BoardViewModel] Undid 1 move, redo stack size:', this.redoStack.length);
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Redo a single move
+   */
+  redoSingle(): boolean {
+    log('[BoardViewModel] redoSingle called, redo stack size:', this.redoStack.length);
+    
+    if (this.redoStack.length === 0) {
+      return false;
+    }
+    
+    const moveToRedo = this.redoStack.pop()!;
+    
+    try {
+      const move = this.chess.move({
+        from: moveToRedo.from as Square,
+        to: moveToRedo.to as Square,
+        promotion: moveToRedo.promotion,
+      });
+      
+      if (move) {
+        this.updateState();
+        this.lastMove = { from: move.from as Square, to: move.to as Square };
+        this.lastPlayedBucket = null;
+        this.statusMessage = `Redid: ${move.san}`;
+        engineViewModel.reset();
+        log('[BoardViewModel] Redid 1 move');
+        
+        // If auto-play is enabled and it's now the engine's turn, trigger auto-play
+        if (this.autoPlayEnabled && !this.isGameOver && this.chess.turn() === this.enginePlaysFor) {
+          log('[BoardViewModel] Scheduling auto-play after redo');
+          setTimeout(() => {
+            this.solveNextMove().catch(err => {
+              console.error('[BoardViewModel] Auto-play error after redo:', err);
+            });
+          }, 500);
+        }
+        
+        return true;
+      }
+    } catch (err) {
+      console.error('[BoardViewModel] Redo failed:', err);
+      // Put the move back on the stack if it failed
+      this.redoStack.push(moveToRedo);
+    }
+    
+    return false;
+  }
+
+  /**
    * Check if undo is available
    */
   get canUndo(): boolean {
     return this.history.length > 0;
+  }
+
+  /**
+   * Check if redo is available
+   */
+  get canRedo(): boolean {
+    return this.redoStack.length > 0;
   }
 
   /**
