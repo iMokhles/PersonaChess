@@ -9,6 +9,13 @@ import { engineViewModel } from './EngineViewModel';
 import { configViewModel } from './ConfigViewModel';
 import { PickedMoveResult, MoveBucket, BUCKET_LABELS } from '../engine/types';
 
+// Set to true for debugging, false for production
+const DEBUG = false;
+
+const log = (...args: any[]) => {
+  if (DEBUG) console.log(...args);
+};
+
 export class BoardViewModel {
   private chess: Chess = new Chess();
   fen: string = this.chess.fen();
@@ -17,18 +24,29 @@ export class BoardViewModel {
   lastPlayedBucket: MoveBucket | null = null;
   statusMessage: string = 'Ready';
   isThinking: boolean = false;
+  autoPlayEnabled: boolean = true; // Auto-play engine moves after human moves
 
   constructor() {
     makeAutoObservable(this, {
       loadFen: action,
       loadPgn: action,
       makeMove: action,
+      makeMoveSync: action,
       solveNextMove: action,
       reset: action,
       undo: action,
+      setAutoPlay: action,
     });
     
-    console.log('[BoardViewModel] Initialized with FEN:', this.fen);
+    log('[BoardViewModel] Initialized with FEN:', this.fen);
+  }
+
+  /**
+   * Set auto-play mode
+   */
+  setAutoPlay(enabled: boolean): void {
+    this.autoPlayEnabled = enabled;
+    log('[BoardViewModel] Auto-play set to:', enabled);
   }
 
   /**
@@ -36,13 +54,13 @@ export class BoardViewModel {
    */
   loadFen(fen: string): boolean {
     try {
-      console.log('[BoardViewModel] loadFen called:', fen);
+      log('[BoardViewModel] loadFen called:', fen);
       const newChess = new Chess(fen);
       this.chess = newChess;
       this.updateState();
       this.statusMessage = 'Position loaded';
       engineViewModel.reset();
-      console.log('[BoardViewModel] FEN loaded successfully');
+      log('[BoardViewModel] FEN loaded successfully');
       return true;
     } catch (err) {
       console.error('[BoardViewModel] loadFen error:', err);
@@ -56,7 +74,7 @@ export class BoardViewModel {
    */
   loadPgn(pgn: string): boolean {
     try {
-      console.log('[BoardViewModel] loadPgn called');
+      log('[BoardViewModel] loadPgn called');
       const newChess = new Chess();
       newChess.loadPgn(pgn);
       this.chess = newChess;
@@ -72,16 +90,17 @@ export class BoardViewModel {
   }
 
   /**
-   * Make a move on the board
+   * Make a move synchronously (for immediate UI update)
+   * This is called from the drag handler to update the board immediately
    */
-  makeMove(from: Square, to: Square, promotion?: string): boolean {
-    console.log('[BoardViewModel] makeMove called', { from, to, promotion, currentTurn: this.chess.turn() });
+  makeMoveSync(from: Square, to: Square, promotion?: string): boolean {
+    log('[BoardViewModel] makeMoveSync called', { from, to, promotion, currentTurn: this.chess.turn() });
     
     try {
       // Check if it's the correct turn
       const piece = this.chess.get(from);
       if (!piece) {
-        console.log('[BoardViewModel] No piece at source square');
+        log('[BoardViewModel] No piece at source square');
         return false;
       }
       
@@ -89,13 +108,9 @@ export class BoardViewModel {
       const isWhiteTurn = this.chess.turn() === 'w';
       
       if (isWhitePiece !== isWhiteTurn) {
-        console.log('[BoardViewModel] Wrong turn - piece color:', piece.color, 'current turn:', this.chess.turn());
+        log('[BoardViewModel] Wrong turn - piece color:', piece.color, 'current turn:', this.chess.turn());
         return false;
       }
-      
-      // Get legal moves for debugging
-      const legalMoves = this.chess.moves({ square: from, verbose: true });
-      console.log('[BoardViewModel] Legal moves from', from, ':', legalMoves.map(m => m.to));
       
       const move = this.chess.move({
         from,
@@ -104,18 +119,76 @@ export class BoardViewModel {
       });
 
       if (move) {
-        console.log('[BoardViewModel] Move successful:', move.san, move);
+        log('[BoardViewModel] Move successful:', move.san);
         this.updateState();
         this.lastMove = { from, to };
         this.lastPlayedBucket = null;
-        this.statusMessage = `Played: ${move.san}`;
+        this.statusMessage = `You played: ${move.san}`;
         engineViewModel.reset();
-        console.log('[BoardViewModel] State updated, new FEN:', this.fen);
+        
+        // Trigger auto-play asynchronously in the background
+        if (this.autoPlayEnabled && !this.isGameOver) {
+          log('[BoardViewModel] Scheduling auto-play...');
+          // Use requestIdleCallback or setTimeout to not block
+          setTimeout(() => {
+            this.solveNextMove().catch(err => {
+              console.error('[BoardViewModel] Auto-play error:', err);
+            });
+          }, 300);
+        }
+        
         return true;
       } else {
-        console.log('[BoardViewModel] Move failed - chess.js returned null');
+        log('[BoardViewModel] Move failed - chess.js returned null');
         return false;
       }
+    } catch (err) {
+      console.error('[BoardViewModel] makeMoveSync exception:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Make a move on the board (async version for programmatic use)
+   * @param skipAutoPlay - If true, skip auto-playing engine move (used by engine itself)
+   */
+  async makeMove(from: Square, to: Square, promotion?: string, skipAutoPlay: boolean = false): Promise<boolean> {
+    // For drag and drop, use sync version for immediate feedback
+    if (!skipAutoPlay) {
+      return this.makeMoveSync(from, to, promotion);
+    }
+    
+    // For engine moves, use async version
+    log('[BoardViewModel] makeMove (async) called', { from, to, promotion });
+    
+    try {
+      const piece = this.chess.get(from);
+      if (!piece) {
+        return false;
+      }
+      
+      const isWhitePiece = piece.color === 'w';
+      const isWhiteTurn = this.chess.turn() === 'w';
+      
+      if (isWhitePiece !== isWhiteTurn) {
+        return false;
+      }
+      
+      const move = this.chess.move({
+        from,
+        to,
+        promotion: promotion as 'q' | 'r' | 'b' | 'n' | undefined,
+      });
+
+      if (move) {
+        this.updateState();
+        this.lastMove = { from, to };
+        this.lastPlayedBucket = null;
+        this.statusMessage = `Engine played: ${move.san}`;
+        engineViewModel.reset();
+        return true;
+      }
+      return false;
     } catch (err) {
       console.error('[BoardViewModel] makeMove exception:', err);
       return false;
@@ -124,15 +197,17 @@ export class BoardViewModel {
 
   /**
    * Make a move from UCI notation (e.g., "e2e4")
+   * This is used by the engine, so it doesn't trigger auto-play
    */
-  makeMoveUCI(uci: string): boolean {
+  async makeMoveUCI(uci: string): Promise<boolean> {
     if (uci.length < 4) return false;
     
     const from = uci.slice(0, 2) as Square;
     const to = uci.slice(2, 4) as Square;
     const promotion = uci.length > 4 ? uci[4] : undefined;
     
-    return this.makeMove(from, to, promotion);
+    // Skip auto-play when engine makes a move
+    return await this.makeMove(from, to, promotion, true);
   }
 
   /**
@@ -147,7 +222,7 @@ export class BoardViewModel {
     try {
       runInAction(() => {
         this.isThinking = true;
-        this.statusMessage = 'Analyzing position...';
+        this.statusMessage = 'Engine thinking...';
       });
 
       // Initialize engine if needed
@@ -166,30 +241,37 @@ export class BoardViewModel {
       const result = engineViewModel.pickMoveFromBuckets(configViewModel.bucketConfig);
 
       if (result) {
-        // Apply the picked move
-        this.makeMoveUCI(result.move.move);
+        // Apply the picked move (without triggering auto-play)
+        const moveSuccess = await this.makeMoveUCI(result.move.move);
         
-        runInAction(() => {
-          this.lastPlayedBucket = result.bucket;
-          this.statusMessage = `Played: ${BUCKET_LABELS[result.bucket]} move`;
-        });
+        if (moveSuccess) {
+          runInAction(() => {
+            this.lastPlayedBucket = result.bucket;
+            this.statusMessage = `Engine played: ${BUCKET_LABELS[result.bucket]} move`;
+            this.isThinking = false;
+          });
+        } else {
+          runInAction(() => {
+            this.statusMessage = 'Engine move failed';
+            this.isThinking = false;
+          });
+        }
 
         return result;
       } else {
         runInAction(() => {
           this.statusMessage = 'No moves available';
+          this.isThinking = false;
         });
         return null;
       }
     } catch (err) {
+      console.error('[BoardViewModel] solveNextMove error:', err);
       runInAction(() => {
         this.statusMessage = `Error: ${err}`;
-      });
-      return null;
-    } finally {
-      runInAction(() => {
         this.isThinking = false;
       });
+      return null;
     }
   }
 
@@ -197,29 +279,51 @@ export class BoardViewModel {
    * Reset the board to starting position
    */
   reset(): void {
-    console.log('[BoardViewModel] reset called');
+    log('[BoardViewModel] reset called');
     this.chess = new Chess();
     this.updateState();
     this.lastMove = null;
     this.lastPlayedBucket = null;
     this.statusMessage = 'Board reset';
     engineViewModel.reset();
-    console.log('[BoardViewModel] Board reset, new FEN:', this.fen);
+    log('[BoardViewModel] Board reset, new FEN:', this.fen);
   }
 
   /**
-   * Undo the last move
+   * Undo the last move (or last two moves if auto-play is on)
    */
   undo(): boolean {
-    const move = this.chess.undo();
-    if (move) {
-      this.updateState();
-      this.lastMove = null;
-      this.lastPlayedBucket = null;
-      this.statusMessage = 'Move undone';
-      engineViewModel.reset();
-      return true;
+    log('[BoardViewModel] undo called, history length:', this.history.length);
+    
+    // If auto-play is enabled, undo both the engine move and the human move
+    if (this.autoPlayEnabled && this.history.length >= 2) {
+      const move1 = this.chess.undo();
+      const move2 = this.chess.undo();
+      
+      if (move1 && move2) {
+        this.updateState();
+        this.lastMove = null;
+        this.lastPlayedBucket = null;
+        this.statusMessage = 'Undid last 2 moves (human + engine)';
+        engineViewModel.reset();
+        log('[BoardViewModel] Undid 2 moves');
+        return true;
+      }
+    } else {
+      // Undo just one move
+      const move = this.chess.undo();
+      if (move) {
+        this.updateState();
+        this.lastMove = null;
+        this.lastPlayedBucket = null;
+        this.statusMessage = 'Move undone';
+        engineViewModel.reset();
+        log('[BoardViewModel] Undid 1 move');
+        return true;
+      }
     }
+    
+    log('[BoardViewModel] Undo failed - no moves to undo');
     return false;
   }
 
@@ -229,7 +333,7 @@ export class BoardViewModel {
   private updateState(): void {
     this.fen = this.chess.fen();
     this.history = this.chess.history({ verbose: true });
-    console.log('[BoardViewModel] updateState - FEN:', this.fen, 'History length:', this.history.length);
+    log('[BoardViewModel] updateState - FEN:', this.fen, 'History length:', this.history.length);
   }
 
   /**
@@ -319,6 +423,13 @@ export class BoardViewModel {
    */
   get moveCount(): number {
     return this.chess.moveNumber();
+  }
+
+  /**
+   * Check if undo is available
+   */
+  get canUndo(): boolean {
+    return this.history.length > 0;
   }
 
   /**

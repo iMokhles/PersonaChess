@@ -48,9 +48,15 @@ export const ControlPanel: React.FC = observer(() => {
     boardViewModel.undo();
   }, []);
 
+  const handleToggleAutoPlay = useCallback(() => {
+    boardViewModel.setAutoPlay(!boardViewModel.autoPlayEnabled);
+  }, []);
+
   const isThinking = boardViewModel.isThinking;
   const lastBucket = boardViewModel.lastPlayedBucket;
   const statusMessage = boardViewModel.statusMessage;
+  const canUndo = boardViewModel.canUndo;
+  const autoPlayEnabled = boardViewModel.autoPlayEnabled;
 
   return (
     <div className="control-panel">
@@ -78,6 +84,24 @@ export const ControlPanel: React.FC = observer(() => {
             {BUCKET_LABELS[lastBucket]} Move
           </div>
         )}
+      </div>
+
+      {/* Auto-Play Toggle */}
+      <div className="auto-play-section">
+        <label className="toggle-label">
+          <input
+            type="checkbox"
+            checked={autoPlayEnabled}
+            onChange={handleToggleAutoPlay}
+            className="toggle-input"
+          />
+          <span className="toggle-text">Auto-play Engine</span>
+        </label>
+        <span className="toggle-hint">
+          {autoPlayEnabled 
+            ? 'Engine will play automatically after your moves' 
+            : 'Click "Solve Next Move" to play engine manually'}
+        </span>
       </div>
 
       {/* Engine Status */}
@@ -108,7 +132,8 @@ export const ControlPanel: React.FC = observer(() => {
         <button
           className="btn btn-primary btn-large"
           onClick={handleSolveNextMove}
-          disabled={isThinking || boardViewModel.isGameOver}
+          disabled={isThinking || boardViewModel.isGameOver || autoPlayEnabled}
+          title={autoPlayEnabled ? 'Disabled when auto-play is enabled' : 'Manually trigger engine move'}
         >
           {isThinking ? 'Analyzing...' : 'Solve Next Move'}
         </button>
@@ -117,11 +142,12 @@ export const ControlPanel: React.FC = observer(() => {
       {/* Secondary Actions */}
       <div className="secondary-actions">
         <button 
-          className="btn btn-secondary"
+          className="btn btn-secondary btn-undo"
           onClick={handleUndo}
-          disabled={boardViewModel.history.length === 0}
+          disabled={!canUndo}
+          title={autoPlayEnabled ? 'Undo last 2 moves (your move + engine move)' : 'Undo last move'}
         >
-          Undo
+          ↶ Undo {autoPlayEnabled && canUndo ? '(2 moves)' : ''}
         </button>
         <button 
           className="btn btn-secondary"

@@ -4,7 +4,7 @@
  * Uses react-chessboard and observes BoardViewModel
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Chessboard } from 'react-chessboard';
 import { Square } from 'chess.js';
@@ -15,39 +15,47 @@ interface ChessBoardProps {
   boardWidth?: number;
 }
 
+// Set to true for debugging, false for production
+const DEBUG = false;
+
+const log = (...args: any[]) => {
+  if (DEBUG) console.log(...args);
+};
+
 export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({ 
   boardWidth = 480 
 }) => {
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
 
+  // Use synchronous version for immediate UI feedback
   const handlePieceDrop = useCallback((
     sourceSquare: Square,
     targetSquare: Square
   ): boolean => {
-    console.log('[ChessBoard] handlePieceDrop called', { sourceSquare, targetSquare });
+    log('[ChessBoard] handlePieceDrop called', { sourceSquare, targetSquare });
     
-    // Try to make the move
-    const result = boardViewModel.makeMove(sourceSquare, targetSquare);
+    // Use sync version for immediate board update
+    const result = boardViewModel.makeMoveSync(sourceSquare, targetSquare);
     
-    console.log('[ChessBoard] makeMove result:', result);
+    log('[ChessBoard] makeMove result:', result);
     
     if (result) {
       setSelectedSquare(null);
-      console.log('[ChessBoard] Move successful, cleared selection');
+      log('[ChessBoard] Move successful, cleared selection');
     } else {
-      console.log('[ChessBoard] Move failed - invalid move');
+      log('[ChessBoard] Move failed - invalid move');
     }
     
     return result;
   }, []);
 
   const handleSquareClick = useCallback((square: Square) => {
-    console.log('[ChessBoard] handleSquareClick called', { square, selectedSquare });
+    log('[ChessBoard] handleSquareClick called', { square, selectedSquare });
     
     if (selectedSquare) {
       // If we have a selected square, try to make a move
-      const result = boardViewModel.makeMove(selectedSquare, square);
-      console.log('[ChessBoard] Click move result:', result);
+      const result = boardViewModel.makeMoveSync(selectedSquare, square);
+      log('[ChessBoard] Click move result:', result);
       
       if (result) {
         setSelectedSquare(null);
@@ -63,7 +71,7 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
     } else {
       // Select a square if it has legal moves
       const legalMoves = boardViewModel.getLegalMoves(square);
-      console.log('[ChessBoard] Legal moves for square:', square, legalMoves.length);
+      log('[ChessBoard] Legal moves for square:', square, legalMoves.length);
       
       if (legalMoves.length > 0) {
         setSelectedSquare(square);
@@ -71,34 +79,39 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
     }
   }, [selectedSquare]);
 
-  // Custom square styles for last move highlighting and selected square
-  const customSquareStyles: Record<string, React.CSSProperties> = {};
-  
-  if (boardViewModel.lastMove) {
-    customSquareStyles[boardViewModel.lastMove.from] = {
-      backgroundColor: 'rgba(255, 255, 0, 0.4)',
-    };
-    customSquareStyles[boardViewModel.lastMove.to] = {
-      backgroundColor: 'rgba(255, 255, 0, 0.4)',
-    };
-  }
-
-  // Highlight selected square
-  if (selectedSquare) {
-    customSquareStyles[selectedSquare] = {
-      backgroundColor: 'rgba(74, 158, 255, 0.4)',
-    };
+  // Memoize custom square styles to avoid recalculating on every render
+  const customSquareStyles = useMemo(() => {
+    const styles: Record<string, React.CSSProperties> = {};
     
-    // Highlight legal moves from selected square
-    const legalMoves = boardViewModel.getLegalMoves(selectedSquare);
-    legalMoves.forEach(move => {
-      customSquareStyles[move.to] = {
-        backgroundColor: 'rgba(74, 158, 255, 0.2)',
+    // Highlight last move
+    if (boardViewModel.lastMove) {
+      styles[boardViewModel.lastMove.from] = {
+        backgroundColor: 'rgba(255, 255, 0, 0.4)',
       };
-    });
-  }
+      styles[boardViewModel.lastMove.to] = {
+        backgroundColor: 'rgba(255, 255, 0, 0.4)',
+      };
+    }
 
-  console.log('[ChessBoard] Rendering with FEN:', boardViewModel.fen, 'Turn:', boardViewModel.turn);
+    // Highlight selected square and legal moves
+    if (selectedSquare) {
+      styles[selectedSquare] = {
+        backgroundColor: 'rgba(74, 158, 255, 0.4)',
+      };
+      
+      // Highlight legal moves from selected square
+      const legalMoves = boardViewModel.getLegalMoves(selectedSquare);
+      legalMoves.forEach(move => {
+        styles[move.to] = {
+          backgroundColor: 'rgba(74, 158, 255, 0.2)',
+        };
+      });
+    }
+
+    return styles;
+  }, [boardViewModel.lastMove, selectedSquare, boardViewModel.fen]);
+
+  log('[ChessBoard] Rendering with FEN:', boardViewModel.fen, 'Turn:', boardViewModel.turn);
 
   return (
     <div className="chessboard-container">
