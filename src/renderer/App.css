@@ -54,21 +54,26 @@
   gap: 24px;
   padding: 24px;
   align-items: flex-start;
-  min-width: 1000px;
+  min-width: 1200px;
   overflow-x: auto;
+  height: calc(100vh - 140px); /* Full height minus header and footer */
 }
 
 .board-section {
-  flex-shrink: 1;
+  width: 750px;
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-start;
 }
 
 .controls-section {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  width: 360px;
+  width: 450px;
   flex-shrink: 0;
-  max-height: calc(100vh - 160px);
+  height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
 }

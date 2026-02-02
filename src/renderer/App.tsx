@@ -10,8 +10,8 @@ import { ChessBoardComponent, ConfigPanel, ControlPanel } from './components';
 import { engineViewModel } from '../viewmodels';
 import './App.css';
 
-// Fixed board size
-const BOARD_SIZE = 250;
+// Fixed board size - fits within 750px container
+const BOARD_SIZE = 650;
 
 export const App: React.FC = observer(() => {
   // Initialize engine on mount
