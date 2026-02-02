@@ -366,6 +366,13 @@ export class BoardViewModel {
   }
 
   /**
+   * Get piece at square (for UI visual indicators)
+   */
+  getPieceAt(square: Square) {
+    return this.chess.get(square);
+  }
+
+  /**
    * Get all legal moves
    */
   get allLegalMoves(): Move[] {
