@@ -1,8 +1,8 @@
 {
   "name": "personachess",
-  "productName": "personachess",
+  "productName": "PersonaChess",
   "version": "1.0.0",
-  "description": "My Electron application description",
+  "description": "Human-like chess move generator using Stockfish analysis",
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
@@ -10,9 +10,15 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "eslint --ext .ts,.tsx ."
+    "lint": "eslint --ext .ts,.tsx .",
+    "postinstall": "cp node_modules/stockfish.js/stockfish.js public/ && cp node_modules/stockfish.js/stockfish.wasm public/"
   },
-  "keywords": [],
+  "keywords": [
+    "chess",
+    "stockfish",
+    "electron",
+    "mvvm"
+  ],
   "author": {
     "name": "iMokhles",
     "email": "mokhles@blockgemini.com"
@@ -29,8 +35,11 @@
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron/fuses": "^1.8.0",
     "@types/electron-squirrel-startup": "^1.0.2",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
+    "@vitejs/plugin-react": "^4.0.0",
     "electron": "40.1.0",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
@@ -38,6 +47,13 @@
     "vite": "^5.4.21"
   },
   "dependencies": {
-    "electron-squirrel-startup": "^1.0.1"
+    "chess.js": "^1.4.0",
+    "electron-squirrel-startup": "^1.0.1",
+    "mobx": "^6.15.0",
+    "mobx-react-lite": "^4.1.1",
+    "react": "^19.2.4",
+    "react-chessboard": "^5.8.6",
+    "react-dom": "^19.2.4",
+    "stockfish.js": "^10.0.2"
   }
 }

@@ -1,4 +1,8 @@
-import { defineConfig } from 'vite';
+import type { UserConfig } from 'vite';
 
-// https://vitejs.dev/config
-export default defineConfig({});
+const config: UserConfig = {
+  publicDir: 'public',
+  clearScreen: false,
+};
+
+export default config;

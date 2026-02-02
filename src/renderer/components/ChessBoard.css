@@ -1,0 +1,52 @@
+/* ChessBoard Component Styles */
+
+.chessboard-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.board-wrapper {
+  position: relative;
+}
+
+.board-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.turn-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.turn-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transition: background-color 0.2s ease;
+}
+
+.turn-dot.w {
+  background-color: #f0f0f0;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+}
+
+.turn-dot.b {
+  background-color: #2d2d2d;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+  border: 1px solid #666;
+}
+
+.move-count {
+  color: rgba(255, 255, 255, 0.6);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
