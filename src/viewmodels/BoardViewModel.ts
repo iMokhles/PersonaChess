@@ -27,6 +27,8 @@ export class BoardViewModel {
       reset: action,
       undo: action,
     });
+    
+    console.log('[BoardViewModel] Initialized with FEN:', this.fen);
   }
 
   /**
@@ -34,13 +36,16 @@ export class BoardViewModel {
    */
   loadFen(fen: string): boolean {
     try {
+      console.log('[BoardViewModel] loadFen called:', fen);
       const newChess = new Chess(fen);
       this.chess = newChess;
       this.updateState();
       this.statusMessage = 'Position loaded';
       engineViewModel.reset();
+      console.log('[BoardViewModel] FEN loaded successfully');
       return true;
     } catch (err) {
+      console.error('[BoardViewModel] loadFen error:', err);
       this.statusMessage = `Invalid FEN: ${err}`;
       return false;
     }
@@ -51,6 +56,7 @@ export class BoardViewModel {
    */
   loadPgn(pgn: string): boolean {
     try {
+      console.log('[BoardViewModel] loadPgn called');
       const newChess = new Chess();
       newChess.loadPgn(pgn);
       this.chess = newChess;
@@ -59,6 +65,7 @@ export class BoardViewModel {
       engineViewModel.reset();
       return true;
     } catch (err) {
+      console.error('[BoardViewModel] loadPgn error:', err);
       this.statusMessage = `Invalid PGN: ${err}`;
       return false;
     }
@@ -68,7 +75,28 @@ export class BoardViewModel {
    * Make a move on the board
    */
   makeMove(from: Square, to: Square, promotion?: string): boolean {
+    console.log('[BoardViewModel] makeMove called', { from, to, promotion, currentTurn: this.chess.turn() });
+    
     try {
+      // Check if it's the correct turn
+      const piece = this.chess.get(from);
+      if (!piece) {
+        console.log('[BoardViewModel] No piece at source square');
+        return false;
+      }
+      
+      const isWhitePiece = piece.color === 'w';
+      const isWhiteTurn = this.chess.turn() === 'w';
+      
+      if (isWhitePiece !== isWhiteTurn) {
+        console.log('[BoardViewModel] Wrong turn - piece color:', piece.color, 'current turn:', this.chess.turn());
+        return false;
+      }
+      
+      // Get legal moves for debugging
+      const legalMoves = this.chess.moves({ square: from, verbose: true });
+      console.log('[BoardViewModel] Legal moves from', from, ':', legalMoves.map(m => m.to));
+      
       const move = this.chess.move({
         from,
         to,
@@ -76,15 +104,20 @@ export class BoardViewModel {
       });
 
       if (move) {
+        console.log('[BoardViewModel] Move successful:', move.san, move);
         this.updateState();
         this.lastMove = { from, to };
         this.lastPlayedBucket = null;
         this.statusMessage = `Played: ${move.san}`;
         engineViewModel.reset();
+        console.log('[BoardViewModel] State updated, new FEN:', this.fen);
         return true;
+      } else {
+        console.log('[BoardViewModel] Move failed - chess.js returned null');
+        return false;
       }
-      return false;
-    } catch {
+    } catch (err) {
+      console.error('[BoardViewModel] makeMove exception:', err);
       return false;
     }
   }
@@ -164,12 +197,14 @@ export class BoardViewModel {
    * Reset the board to starting position
    */
   reset(): void {
+    console.log('[BoardViewModel] reset called');
     this.chess = new Chess();
     this.updateState();
     this.lastMove = null;
     this.lastPlayedBucket = null;
     this.statusMessage = 'Board reset';
     engineViewModel.reset();
+    console.log('[BoardViewModel] Board reset, new FEN:', this.fen);
   }
 
   /**
@@ -194,6 +229,7 @@ export class BoardViewModel {
   private updateState(): void {
     this.fen = this.chess.fen();
     this.history = this.chess.history({ verbose: true });
+    console.log('[BoardViewModel] updateState - FEN:', this.fen, 'History length:', this.history.length);
   }
 
   /**

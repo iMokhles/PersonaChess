@@ -16,15 +16,28 @@ const BOARD_SIZE = 250;
 export const App: React.FC = observer(() => {
   // Initialize engine on mount
   useEffect(() => {
-    engineViewModel.initialize().catch(err => {
-      console.error('Failed to initialize Stockfish:', err);
-    });
+    console.log('[App] Component mounted, initializing engine...');
+    
+    const initEngine = async () => {
+      try {
+        console.log('[App] Starting engine initialization...');
+        await engineViewModel.initialize();
+        console.log('[App] Engine initialized successfully');
+      } catch (err) {
+        console.error('[App] Failed to initialize Stockfish:', err);
+      }
+    };
+    
+    initEngine();
 
     // Cleanup on unmount
     return () => {
+      console.log('[App] Component unmounting, destroying engine...');
       engineViewModel.destroy();
     };
   }, []);
+
+  console.log('[App] Rendering App component');
 
   return (
     <div className="app">

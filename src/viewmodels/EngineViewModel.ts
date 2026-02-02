@@ -30,21 +30,34 @@ export class EngineViewModel {
       reset: action,
       setError: action,
     });
+    
+    console.log('[EngineViewModel] Initialized');
   }
 
   /**
    * Initialize the Stockfish engine
    */
   async initialize(): Promise<void> {
-    if (this.isInitialized) return;
+    if (this.isInitialized) {
+      console.log('[EngineViewModel] Already initialized');
+      return;
+    }
 
+    console.log('[EngineViewModel] Starting initialization...');
+    
     try {
       this.error = null;
+      console.log('[EngineViewModel] Calling stockfishService.initialize()...');
       await stockfishService.initialize();
+      console.log('[EngineViewModel] Stockfish service initialized');
+      
       runInAction(() => {
         this.isInitialized = true;
       });
+      
+      console.log('[EngineViewModel] Initialization complete');
     } catch (err) {
+      console.error('[EngineViewModel] Initialization error:', err);
       runInAction(() => {
         this.error = `Failed to initialize engine: ${err}`;
       });
@@ -56,6 +69,7 @@ export class EngineViewModel {
    * Configure engine settings
    */
   configure(options: { multiPV?: number; depth?: number }): void {
+    console.log('[EngineViewModel] Configuring:', options);
     stockfishService.configure(options);
   }
 
@@ -63,7 +77,10 @@ export class EngineViewModel {
    * Analyze a position and classify moves
    */
   async analyzePosition(fen: string, depth: number = 20, multiPV: number = 12): Promise<ClassifiedMove[]> {
+    console.log('[EngineViewModel] analyzePosition called', { fen, depth, multiPV });
+    
     if (!this.isInitialized) {
+      console.log('[EngineViewModel] Not initialized, initializing now...');
       await this.initialize();
     }
 
@@ -79,10 +96,13 @@ export class EngineViewModel {
       stockfishService.configure({ depth, multiPV });
 
       // Analyze position
+      console.log('[EngineViewModel] Starting analysis...');
       const moves = await stockfishService.analyzePosition(fen);
+      console.log('[EngineViewModel] Analysis complete, got', moves.length, 'moves');
       
       // Classify moves
       const classified = classifyMoves(moves);
+      console.log('[EngineViewModel] Classified', classified.length, 'moves');
 
       runInAction(() => {
         this.analyzedMoves = classified;
@@ -91,6 +111,7 @@ export class EngineViewModel {
 
       return classified;
     } catch (err) {
+      console.error('[EngineViewModel] Analysis error:', err);
       runInAction(() => {
         this.error = `Analysis failed: ${err}`;
         this.isAnalyzing = false;
@@ -103,9 +124,18 @@ export class EngineViewModel {
    * Pick a move from the analyzed moves using bucket configuration
    */
   pickMoveFromBuckets(config: BucketConfig): PickedMoveResult | null {
-    if (this.analyzedMoves.length === 0) return null;
+    console.log('[EngineViewModel] pickMoveFromBuckets called', { 
+      analyzedMovesCount: this.analyzedMoves.length,
+      config 
+    });
+    
+    if (this.analyzedMoves.length === 0) {
+      console.log('[EngineViewModel] No analyzed moves available');
+      return null;
+    }
 
     const result = pickMove(this.analyzedMoves, config);
+    console.log('[EngineViewModel] Picked move:', result);
     
     runInAction(() => {
       this.lastPickedMove = result;
@@ -118,6 +148,7 @@ export class EngineViewModel {
    * Stop current analysis
    */
   stopAnalysis(): void {
+    console.log('[EngineViewModel] stopAnalysis called');
     stockfishService.stop();
     runInAction(() => {
       this.isAnalyzing = false;
@@ -128,6 +159,7 @@ export class EngineViewModel {
    * Start a new game
    */
   newGame(): void {
+    console.log('[EngineViewModel] newGame called');
     stockfishService.newGame();
     this.reset();
   }
@@ -136,6 +168,7 @@ export class EngineViewModel {
    * Reset state
    */
   reset(): void {
+    console.log('[EngineViewModel] reset called');
     this.analyzedMoves = [];
     this.lastPickedMove = null;
     this.error = null;
@@ -180,6 +213,7 @@ export class EngineViewModel {
    * Destroy the engine
    */
   destroy(): void {
+    console.log('[EngineViewModel] destroy called');
     stockfishService.destroy();
     runInAction(() => {
       this.isInitialized = false;
