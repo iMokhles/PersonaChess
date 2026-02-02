@@ -212,11 +212,28 @@ export class BoardViewModel {
       }
 
       // Analyze current position
-      await engineViewModel.analyzePosition(
+      const analyzedMoves = await engineViewModel.analyzePosition(
         this.fen,
         configViewModel.depth,
         configViewModel.multiPV
       );
+
+      // Check if analysis returned no moves (game over position)
+      if (analyzedMoves.length === 0) {
+        runInAction(() => {
+          if (this.isCheckmate) {
+            this.statusMessage = 'Checkmate! Game over.';
+          } else if (this.isStalemate) {
+            this.statusMessage = 'Stalemate! Game over.';
+          } else if (this.isDraw) {
+            this.statusMessage = 'Draw! Game over.';
+          } else {
+            this.statusMessage = 'No legal moves available';
+          }
+          this.isThinking = false;
+        });
+        return null;
+      }
 
       // Pick a move based on bucket configuration
       const result = engineViewModel.pickMoveFromBuckets(configViewModel.bucketConfig);

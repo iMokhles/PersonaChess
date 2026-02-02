@@ -160,7 +160,7 @@ export class StockfishService {
   async analyzePosition(fen: string): Promise<AnalyzedMove[]> {
     await this.waitForReady();
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const moves: Map<number, StockfishInfo> = new Map();
       let bestScore = 0;
       let hasReceivedBestMove = false;
@@ -196,8 +196,10 @@ export class StockfishService {
           console.log('[StockfishService] Returning', analyzedMoves.length, 'analyzed moves');
           resolve(analyzedMoves);
         } else {
-          console.error('[StockfishService] No moves collected');
-          reject(new Error('No moves collected from analysis'));
+          // Check if this is a game over position (checkmate/stalemate)
+          // If we received mate scores but no moves, it's game over
+          console.log('[StockfishService] No moves collected - likely game over position');
+          resolve([]); // Return empty array instead of rejecting for game over positions
         }
       };
 
@@ -229,6 +231,20 @@ export class StockfishService {
       const analysisHandler = (message: string) => {
         console.log('[StockfishService] Received message:', message);
         
+        // Check for mate scores (game over positions)
+        if (message.includes('score mate')) {
+          // Extract mate score to detect checkmate/stalemate
+          const mateMatch = message.match(/score mate (-?\d+)/);
+          if (mateMatch) {
+            const mateIn = parseInt(mateMatch[1], 10);
+            console.log('[StockfishService] Detected mate score:', mateIn);
+            // If mate is 0 or negative, it's checkmate/stalemate (no moves available)
+            if (mateIn <= 0) {
+              console.log('[StockfishService] Game over position detected (checkmate/stalemate)');
+            }
+          }
+        }
+        
         // Parse info lines
         if (message.startsWith('info') && message.includes('multipv')) {
           const info = this.parseInfoLine(message);
@@ -255,6 +271,17 @@ export class StockfishService {
           clearTimeout(absoluteTimeout);
           this.removeMessageHandler(analysisHandler);
 
+          // Check if bestmove is "none" (no legal moves - checkmate/stalemate)
+          const bestmoveMatch = message.match(/bestmove\s+(\S+)/);
+          if (bestmoveMatch) {
+            const bestmove = bestmoveMatch[1];
+            if (bestmove === '(none)' || bestmove === 'none' || bestmove === '0000') {
+              console.log('[StockfishService] No legal moves (checkmate/stalemate)');
+              resolve([]); // Return empty array for game over positions
+              return;
+            }
+          }
+
           console.log('[StockfishService] Received bestmove, collected', moves.size, 'moves');
 
           // Convert to AnalyzedMove array
@@ -275,8 +302,14 @@ export class StockfishService {
             }
           }
 
-          console.log('[StockfishService] Returning', analyzedMoves.length, 'analyzed moves');
-          resolve(analyzedMoves);
+          // If we have no moves but got a bestmove, it might still be game over
+          if (analyzedMoves.length === 0) {
+            console.log('[StockfishService] No moves in bestmove response - game over position');
+            resolve([]);
+          } else {
+            console.log('[StockfishService] Returning', analyzedMoves.length, 'analyzed moves');
+            resolve(analyzedMoves);
+          }
         }
       };
 
