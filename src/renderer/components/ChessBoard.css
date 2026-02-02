@@ -3,12 +3,12 @@
 .chessboard-container {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 16px;
 }
 
 .board-wrapper {
   position: relative;
+  flex-shrink: 0;
 }
 
 .board-info {

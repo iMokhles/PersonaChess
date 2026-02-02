@@ -10,6 +10,9 @@ import { ChessBoardComponent, ConfigPanel, ControlPanel } from './components';
 import { engineViewModel } from '../viewmodels';
 import './App.css';
 
+// Fixed board size
+const BOARD_SIZE = 500;
+
 export const App: React.FC = observer(() => {
   // Initialize engine on mount
   useEffect(() => {
@@ -35,7 +38,7 @@ export const App: React.FC = observer(() => {
 
       <main className="app-main">
         <div className="board-section">
-          <ChessBoardComponent boardWidth={520} />
+          <ChessBoardComponent boardWidth={BOARD_SIZE} />
         </div>
 
         <div className="controls-section">

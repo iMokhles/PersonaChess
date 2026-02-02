@@ -3,34 +3,34 @@
 .control-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 /* Status Section */
 .status-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
+  gap: 10px;
+  padding: 14px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
 }
 
 .status-message {
-  font-size: 14px;
+  font-size: 13px;
   color: rgba(255, 255, 255, 0.7);
 }
 
 .thinking-indicator {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .spinner {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.1);
   border-top-color: #4a9eff;
   border-radius: 50%;
@@ -45,10 +45,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 16px;
+  padding: 6px 12px;
   border-radius: 8px;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
@@ -57,8 +57,8 @@
 .engine-status {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 6px;
+  padding: 10px 14px;
   background: rgba(255, 255, 255, 0.02);
   border-radius: 8px;
 }
@@ -70,12 +70,12 @@
 }
 
 .status-label {
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.5);
 }
 
 .status-value {
-  font-size: 13px;
+  font-size: 12px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   color: rgba(255, 255, 255, 0.7);
 }
@@ -85,23 +85,23 @@
 }
 
 .error-message {
-  padding: 8px 12px;
+  padding: 6px 10px;
   background: rgba(248, 81, 73, 0.1);
   border: 1px solid rgba(248, 81, 73, 0.2);
   border-radius: 6px;
   color: #f85149;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 /* Action Buttons */
 .main-actions {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .btn {
-  padding: 10px 16px;
+  padding: 10px 14px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -110,8 +110,8 @@
 }
 
 .btn-large {
-  padding: 14px 20px;
-  font-size: 16px;
+  padding: 12px 18px;
+  font-size: 15px;
 }
 
 .btn-primary {
@@ -168,25 +168,25 @@
 .load-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
 }
 
 /* Current FEN */
 .current-fen {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .current-fen label {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   color: rgba(255, 255, 255, 0.4);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .fen-display {
-  padding: 12px;
+  padding: 10px;
   background: rgba(0, 0, 0, 0.3);
   border-radius: 8px;
   overflow-x: auto;
@@ -194,7 +194,7 @@
 
 .fen-display code {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 11px;
+  font-size: 10px;
   color: rgba(255, 255, 255, 0.6);
   white-space: nowrap;
 }

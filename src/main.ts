@@ -14,10 +14,11 @@ if (started) {
 
 const createWindow = () => {
   // Create the browser window with appropriate size for chess application
+  // Minimum width ensures horizontal layout always works (500px board + 360px controls + padding)
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 900,
+    minWidth: 1000,
     minHeight: 600,
     title: 'PersonaChess',
     backgroundColor: '#0d1117',
