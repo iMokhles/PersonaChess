@@ -15,7 +15,11 @@ PersonaChess is a chess application that uses the Stockfish UCI engine (WASM) to
 - **Manual Play Mode**: Play against the engine manually, controlling when it analyzes and moves
 - **Undo/Redo**: Single-move undo and redo functionality
 - **FEN/PGN Support**: Load positions from FEN strings or entire games from PGN
+- **FEN History**: Automatic FEN position saving with localStorage, restore on app restart
 - **Move Quality Classification**: Moves are automatically classified into quality buckets based on evaluation loss
+- **Player Move Analysis**: Real-time analysis and display of player move quality (Best, Great, Excellent, Good, Inaccuracy, Mistake, Blunder)
+- **Move Quality Arrows**: Visual arrows showing move quality on the board (Excellent, Good, Mistake, Blunder - max 3 per quality)
+- **Board Orientation**: Flip board to view from either side's perspective
 - **Configurable Engine Settings**: Adjust analysis depth, MultiPV, and move quality distributions
 
 ## 🏗️ Architecture
@@ -131,6 +135,27 @@ npm start
 - **Redo**: Click the "↷ Redo" button to redo the last undone move
 - The redo stack is cleared when you make a new move
 
+### Board Controls
+
+- **Flip Board**: Click the "🔄 Flip Board" button to flip the board orientation (view from Black's or White's perspective)
+- **FEN History**: Current FEN is automatically saved to localStorage. Use the "Restore" button to reload the last saved position
+- **FEN Status**: Indicator shows whether the current position is saved and how many positions are in history (max 50)
+
+### Move Analysis Features
+
+- **Player Move Quality**: After making a move, the quality of your move is automatically analyzed and displayed (e.g., "You played: Excellent move")
+- **Move Quality Arrows**: 
+  - Click "Show Move Arrows" to display arrows on the board showing move quality
+  - Arrows are colored by quality: Excellent (green), Good (gray), Mistake (red), Blunder (dark red)
+  - Shows maximum 3 arrows per quality type (up to 12 arrows total)
+  - Click "Analyze Moves" to manually trigger analysis of all legal moves
+  - Arrows automatically update when the position changes
+
+### Piece Interaction
+
+- **Capturing Engine Pieces**: When auto-play is enabled, you can click on your pieces and then click on engine pieces to capture them
+- **Engine Piece Selection**: Engine pieces cannot be selected to move them, but they can be captured by your pieces
+
 ## 📁 Project Structure
 
 ```
@@ -204,22 +229,29 @@ This creates platform-specific installers (Windows, macOS, Linux) in the `out/ma
 - [x] Manual play mode
 - [x] Single-move undo/redo
 - [x] FEN/PGN loading
+- [x] FEN history with localStorage persistence (auto-save, restore on startup)
+- [x] Board flip functionality (view from either side)
+- [x] Player move quality analysis and display
+- [x] Move quality arrows visualization (Excellent, Good, Mistake, Blunder)
+- [x] Move arrows filtering (max 3 per quality type)
+- [x] Enhanced piece interaction (can capture engine pieces when auto-play enabled)
 - [x] Configurable move quality distributions
 - [x] Engine settings (depth, MultiPV)
 - [x] Game status display (check, checkmate, stalemate, draw)
 - [x] Move history tracking
 - [x] Responsive horizontal layout
+- [x] FEN status indicator (saved/unsaved, history count)
 
 ### 🚧 TODO / Future Enhancements
 
 - [ ] Save/load game configurations
 - [ ] Export games to PGN
-- [ ] Move notation display (SAN)
+- [ ] Move notation display (SAN) in move history
 - [ ] Opening book integration
 - [ ] Time controls
 - [ ] Multiple engine personalities (aggressive, defensive, etc.)
 - [ ] Move suggestions for human player
-- [ ] Analysis panel showing engine evaluation
+- [ ] Analysis panel showing engine evaluation and principal variation
 - [ ] Game replay functionality
 - [ ] Tournament mode
 - [ ] Statistics tracking (win/loss/draw)
@@ -230,12 +262,20 @@ This creates platform-specific installers (Windows, macOS, Linux) in the `out/ma
 - [ ] Engine strength presets (beginner, intermediate, advanced)
 - [ ] Move history panel with notation
 - [ ] Position evaluation graph over time
+- [ ] Filter move arrows by specific quality buckets (currently shows Excellent, Good, Mistake, Blunder)
+- [ ] Show arrows for all move qualities (Best, Great, Inaccuracy)
+- [ ] Configurable arrow colors per quality bucket
+- [ ] Arrow animation effects
+- [ ] Export FEN history to file
+- [ ] Import FEN history from file
 
 ## 🐛 Known Issues
 
 - Stockfish analysis timeout is set to 30 seconds; very deep analysis may timeout
 - Auto-play may trigger multiple times if moves are made very quickly (mitigated with delays)
-- Legacy undo button is disabled (kept for reference)
+- Move arrows analysis may take a few seconds for positions with many legal moves
+- FEN history is limited to 50 positions (oldest positions are automatically removed)
+- Move arrows only show up to 3 arrows per quality type (Excellent, Good, Mistake, Blunder)
 
 ## 📝 License
 
