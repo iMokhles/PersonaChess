@@ -64,6 +64,25 @@ export const ControlPanel: React.FC = observer(() => {
     boardViewModel.setEnginePlaysFor(side);
   }, []);
 
+  const handleFlipBoard = useCallback(() => {
+    boardViewModel.flipBoard();
+  }, []);
+
+  const handleRestoreFen = useCallback(() => {
+    const lastFen = boardViewModel.lastSavedFen;
+    if (lastFen) {
+      boardViewModel.loadFen(lastFen);
+    }
+  }, []);
+
+  const handleToggleMoveArrows = useCallback(() => {
+    boardViewModel.toggleMoveArrows();
+  }, []);
+
+  const handleAnalyzeMoves = useCallback(async () => {
+    await boardViewModel.analyzeAllMoves();
+  }, []);
+
   const isThinking = boardViewModel.isThinking;
   const lastBucket = boardViewModel.lastPlayedBucket;
   const statusMessage = boardViewModel.statusMessage;
@@ -236,11 +255,58 @@ export const ControlPanel: React.FC = observer(() => {
         </button>
       </div>
 
+      {/* Board Controls */}
+      <div className="board-controls">
+        <button 
+          className="btn btn-secondary"
+          onClick={handleFlipBoard}
+          title="Flip board orientation"
+        >
+          🔄 Flip Board
+        </button>
+        <button 
+          className={`btn btn-secondary ${boardViewModel.showMoveArrows ? 'active' : ''}`}
+          onClick={handleToggleMoveArrows}
+          title="Show/hide move quality arrows"
+          disabled={boardViewModel.isAnalyzingMoves}
+        >
+          {boardViewModel.showMoveArrows ? '✓' : ''} Show Move Arrows
+        </button>
+        {boardViewModel.showMoveArrows && (
+          <button 
+            className="btn btn-secondary"
+            onClick={handleAnalyzeMoves}
+            title="Analyze all legal moves"
+            disabled={boardViewModel.isAnalyzingMoves || boardViewModel.isGameOver}
+          >
+            {boardViewModel.isAnalyzingMoves ? 'Analyzing...' : 'Analyze Moves'}
+          </button>
+        )}
+      </div>
+
       {/* Current FEN */}
       <div className="current-fen">
-        <label>Current FEN</label>
+        <div className="fen-header">
+          <label>Current FEN</label>
+          <button 
+            className="btn-restore-fen"
+            onClick={handleRestoreFen}
+            title="Restore last saved FEN"
+            disabled={!boardViewModel.lastSavedFen}
+          >
+            ↻ Restore
+          </button>
+        </div>
         <div className="fen-display">
           <code>{boardViewModel.fen}</code>
+        </div>
+        <div className="fen-info">
+          <span className={`fen-saved-indicator ${boardViewModel.lastSavedFen === boardViewModel.fen ? 'saved' : ''}`}>
+            {boardViewModel.lastSavedFen === boardViewModel.fen ? '✓ Saved' : 'Not saved'}
+          </span>
+          <span className="fen-history-count">
+            History: {boardViewModel.fenHistory.length} positions
+          </span>
         </div>
       </div>
 

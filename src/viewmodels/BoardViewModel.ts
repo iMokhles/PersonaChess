@@ -7,7 +7,7 @@ import { makeAutoObservable, action, runInAction } from 'mobx';
 import { Chess, Move, Square } from 'chess.js';
 import { engineViewModel } from './EngineViewModel';
 import { configViewModel } from './ConfigViewModel';
-import { PickedMoveResult, MoveBucket, BUCKET_LABELS } from '../engine/types';
+import { PickedMoveResult, MoveBucket, BUCKET_LABELS, BUCKET_COLORS } from '../engine/types';
 
 // Set to true for debugging, false for production
 const DEBUG = false;
@@ -26,7 +26,18 @@ export class BoardViewModel {
   isThinking: boolean = false;
   autoPlayEnabled: boolean = true; // Auto-play engine moves after human moves
   enginePlaysFor: 'w' | 'b' = 'b'; // Which side the engine plays for (default: black)
+  boardFlipped: boolean = false; // Board orientation (false = white on bottom, true = black on bottom)
+  showMoveArrows: boolean = false; // Show arrows for all possible moves
+  showArrowsForSide: 'current' | 'player' | 'engine' = 'current'; // Which side's moves to show arrows for
+  lastPlayerMoveQuality: MoveBucket | null = null; // Quality of the last player move
+  isAnalyzingMoves: boolean = false; // Whether we're currently analyzing moves
+  
+  // Store analyzed moves as an object for MobX observability
+  private _analyzedLegalMoves: Record<string, MoveBucket> = {};
   private redoStack: Move[] = []; // Stack of moves that were undone for redo functionality
+  private readonly FEN_STORAGE_KEY = 'personachess_current_fen';
+  private readonly FEN_HISTORY_KEY = 'personachess_fen_history';
+  private readonly MAX_HISTORY = 50; // Maximum number of FEN positions to store
 
   constructor() {
     makeAutoObservable(this, {
@@ -40,7 +51,17 @@ export class BoardViewModel {
       redoSingle: action,
       setAutoPlay: action,
       setEnginePlaysFor: action,
+      flipBoard: action,
+      saveFenToHistory: action,
+      loadFenFromHistory: action,
+      toggleMoveArrows: action,
+      setShowArrowsForSide: action,
+      analyzeAllMoves: action,
+      analyzePlayerMove: action,
     });
+    
+    // Try to restore FEN from localStorage on initialization
+    this.restoreFenFromStorage();
     
     log('[BoardViewModel] Initialized with FEN:', this.fen);
   }
@@ -129,6 +150,9 @@ export class BoardViewModel {
         this.lastPlayedBucket = null;
         this.statusMessage = `You played: ${move.san}`;
         engineViewModel.reset();
+        
+        // Analyze the player's move quality
+        this.analyzePlayerMove(move);
         
         // Make engine move after a short delay if:
         // 1. Auto-play is enabled
@@ -351,7 +375,362 @@ export class BoardViewModel {
   private updateState(): void {
     this.fen = this.chess.fen();
     this.history = this.chess.history({ verbose: true });
+    // Save FEN to localStorage whenever it changes
+    this.saveFenToHistory();
     log('[BoardViewModel] updateState - FEN:', this.fen, 'History length:', this.history.length);
+    
+    // Automatically re-analyze moves if arrows are enabled
+    if (this.showMoveArrows && !this.isGameOver) {
+      // Clear previous analysis and trigger new analysis
+      this._analyzedLegalMoves = {};
+      this.analyzeAllMoves();
+    }
+  }
+
+  /**
+   * Flip the board orientation
+   */
+  flipBoard(): void {
+    this.boardFlipped = !this.boardFlipped;
+    log('[BoardViewModel] Board flipped, orientation:', this.boardFlipped ? 'black' : 'white');
+  }
+
+  /**
+   * Save current FEN to localStorage history
+   */
+  saveFenToHistory(): void {
+    try {
+      const currentFen = this.fen;
+      
+      // Save current FEN
+      localStorage.setItem(this.FEN_STORAGE_KEY, currentFen);
+      
+      // Get existing history
+      const historyJson = localStorage.getItem(this.FEN_HISTORY_KEY);
+      let history: string[] = historyJson ? JSON.parse(historyJson) : [];
+      
+      // Remove duplicate if it's the same as the last one
+      if (history.length > 0 && history[history.length - 1] === currentFen) {
+        return; // Don't add duplicate consecutive FENs
+      }
+      
+      // Add current FEN to history
+      history.push(currentFen);
+      
+      // Limit history size
+      if (history.length > this.MAX_HISTORY) {
+        history = history.slice(-this.MAX_HISTORY);
+      }
+      
+      // Save back to localStorage
+      localStorage.setItem(this.FEN_HISTORY_KEY, JSON.stringify(history));
+      
+      log('[BoardViewModel] Saved FEN to history, total entries:', history.length);
+    } catch (err) {
+      console.error('[BoardViewModel] Failed to save FEN to history:', err);
+    }
+  }
+
+  /**
+   * Restore FEN from localStorage on app startup
+   */
+  private restoreFenFromStorage(): void {
+    try {
+      const savedFen = localStorage.getItem(this.FEN_STORAGE_KEY);
+      if (savedFen) {
+        // Validate FEN before loading
+        const testChess = new Chess();
+        try {
+          testChess.load(savedFen);
+          // FEN is valid, load it
+          this.loadFen(savedFen);
+          this.statusMessage = 'Restored position from previous session';
+          log('[BoardViewModel] Restored FEN from storage:', savedFen);
+        } catch (err) {
+          console.warn('[BoardViewModel] Saved FEN is invalid, using default:', err);
+          localStorage.removeItem(this.FEN_STORAGE_KEY);
+        }
+      }
+    } catch (err) {
+      console.error('[BoardViewModel] Failed to restore FEN from storage:', err);
+    }
+  }
+
+  /**
+   * Load FEN from history by index
+   */
+  loadFenFromHistory(index: number): boolean {
+    try {
+      const historyJson = localStorage.getItem(this.FEN_HISTORY_KEY);
+      if (!historyJson) return false;
+      
+      const history: string[] = JSON.parse(historyJson);
+      if (index < 0 || index >= history.length) return false;
+      
+      const fen = history[index];
+      return this.loadFen(fen);
+    } catch (err) {
+      console.error('[BoardViewModel] Failed to load FEN from history:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Get FEN history
+   */
+  get fenHistory(): string[] {
+    try {
+      const historyJson = localStorage.getItem(this.FEN_HISTORY_KEY);
+      return historyJson ? JSON.parse(historyJson) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Get the last saved FEN
+   */
+  get lastSavedFen(): string | null {
+    try {
+      return localStorage.getItem(this.FEN_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Toggle showing move arrows
+   */
+  toggleMoveArrows(): void {
+    this.showMoveArrows = !this.showMoveArrows;
+    if (this.showMoveArrows && Object.keys(this._analyzedLegalMoves).length === 0) {
+      // Auto-analyze if arrows are enabled and we don't have analysis yet
+      this.analyzeAllMoves();
+    }
+  }
+
+  /**
+   * Set which side's moves to show arrows for
+   */
+  setShowArrowsForSide(side: 'current' | 'player' | 'engine'): void {
+    this.showArrowsForSide = side;
+    log('[BoardViewModel] Show arrows for side:', side);
+    // Re-analyze if arrows are enabled
+    if (this.showMoveArrows) {
+      this._analyzedLegalMoves = {};
+      this.analyzeAllMoves();
+    }
+  }
+
+  /**
+   * Analyze all legal moves for the current position
+   */
+  async analyzeAllMoves(): Promise<void> {
+    if (this.isGameOver || this.isAnalyzingMoves) {
+      return;
+    }
+
+    try {
+      runInAction(() => {
+        this.isAnalyzingMoves = true;
+        this._analyzedLegalMoves = {}; // Clear
+      });
+
+      // Get all legal moves
+      const legalMoves = this.allLegalMoves;
+      if (legalMoves.length === 0) {
+        runInAction(() => {
+          this.isAnalyzingMoves = false;
+        });
+        return;
+      }
+
+      // Initialize engine if needed
+      if (!engineViewModel.isInitialized) {
+        await engineViewModel.initialize();
+      }
+
+      // Analyze current position
+      const analyzedMoves = await engineViewModel.analyzePosition(
+        this.fen,
+        configViewModel.depth,
+        configViewModel.multiPV
+      );
+
+      // Create a map of UCI moves to their quality buckets
+      const moveMap: Record<string, MoveBucket> = {};
+      for (const analyzedMove of analyzedMoves) {
+        moveMap[analyzedMove.move] = analyzedMove.bucket;
+      }
+
+      // For moves that weren't analyzed (not in top MultiPV), classify as lower quality
+      for (const move of legalMoves) {
+        const uci = `${move.from}${move.to}${move.promotion || ''}`;
+        if (!moveMap[uci]) {
+          // Not in top moves, assume it's at least "good" or worse
+          moveMap[uci] = 'good';
+        }
+      }
+
+      runInAction(() => {
+        this._analyzedLegalMoves = moveMap;
+        this.isAnalyzingMoves = false;
+      });
+
+      log('[BoardViewModel] Analyzed', Object.keys(moveMap).length, 'legal moves');
+    } catch (err) {
+      console.error('[BoardViewModel] Failed to analyze moves:', err);
+      runInAction(() => {
+        this.isAnalyzingMoves = false;
+      });
+    }
+  }
+
+  /**
+   * Analyze the quality of a player's move
+   * This should be called after the move is made, analyzing the position before the move
+   */
+  async analyzePlayerMove(move: Move): Promise<void> {
+    // Run asynchronously so it doesn't block the UI
+    setTimeout(async () => {
+      try {
+        // Initialize engine if needed
+        if (!engineViewModel.isInitialized) {
+          await engineViewModel.initialize();
+        }
+
+        // Get the position before the move (from history)
+        const history = this.chess.history({ verbose: true });
+        if (history.length === 0) {
+          return; // No history, can't analyze
+        }
+
+        // The move we just made is the last one in history
+        // We need to analyze the position before it
+        // chess.js history verbose includes 'before' and 'after' FEN
+        const lastMoveInHistory = history[history.length - 1];
+        const beforeFen = (lastMoveInHistory as any).before || this.fen;
+
+        // Analyze the position before the move
+        const analyzedMoves = await engineViewModel.analyzePosition(
+          beforeFen,
+          Math.min(configViewModel.depth, 15), // Use smaller depth for faster analysis
+          configViewModel.multiPV
+        );
+
+        // Find the move in the analyzed moves
+        const moveUCI = `${move.from}${move.to}${move.promotion || ''}`;
+        const analyzedMove = analyzedMoves.find(m => m.move === moveUCI);
+        if (analyzedMove) {
+          runInAction(() => {
+            this.lastPlayerMoveQuality = analyzedMove.bucket;
+            const qualityLabel = BUCKET_LABELS[analyzedMove.bucket];
+            this.statusMessage = `You played: ${move.san} (${qualityLabel})`;
+          });
+          log('[BoardViewModel] Player move quality:', analyzedMove.bucket);
+        } else {
+          // Move not in top moves, assume it's at least "good" or worse
+          runInAction(() => {
+            this.lastPlayerMoveQuality = 'good';
+            this.statusMessage = `You played: ${move.san} (Good)`;
+          });
+        }
+      } catch (err) {
+        console.error('[BoardViewModel] Failed to analyze player move:', err);
+        // Don't update status on error, keep the original message
+      }
+    }, 100);
+  }
+
+  /**
+   * Get arrows data for react-chessboard
+   * Returns array of Arrow objects with startSquare, endSquare, and color properties
+   * Only shows arrows for Excellent, Good, Mistake, and Blunder moves
+   * Limited to maximum 3 arrows per quality bucket
+   */
+  get moveArrows(): Array<{ startSquare: string; endSquare: string; color: string }> {
+    if (!this.showMoveArrows || Object.keys(this._analyzedLegalMoves).length === 0) {
+      return [];
+    }
+
+    // Only show arrows for these specific move qualities
+    const allowedBuckets: MoveBucket[] = ['excellent', 'good', 'mistake', 'blunder'];
+    const maxArrowsPerBucket = 3;
+
+    let legalMoves = this.allLegalMoves;
+
+    // Filter moves by side if needed
+    if (this.showArrowsForSide === 'player') {
+      // Show moves for the side that the engine is NOT playing for
+      const playerSide = this.enginePlaysFor === 'w' ? 'b' : 'w';
+      legalMoves = legalMoves.filter(move => {
+        const piece = this.getPieceAt(move.from);
+        return piece && piece.color === playerSide;
+      });
+    } else if (this.showArrowsForSide === 'engine') {
+      // Show moves for the side that the engine IS playing for
+      legalMoves = legalMoves.filter(move => {
+        const piece = this.getPieceAt(move.from);
+        return piece && piece.color === this.enginePlaysFor;
+      });
+    }
+    // If 'current', show all legal moves (already filtered by chess.js to current turn)
+
+    // Helper function to validate square format (a-h, 1-8)
+    const isValidSquare = (square: any): square is Square => {
+      if (!square || typeof square !== 'string') return false;
+      return /^[a-h][1-8]$/.test(square);
+    };
+
+    // Group moves by bucket
+    const movesByBucket: Record<MoveBucket, Array<{ startSquare: string; endSquare: string; color: string }>> = {
+      excellent: [],
+      good: [],
+      mistake: [],
+      blunder: [],
+      best: [], // Not used but needed for type
+      great: [], // Not used but needed for type
+      inaccuracy: [], // Not used but needed for type
+    };
+
+    // Collect all valid moves grouped by bucket
+    for (const move of legalMoves) {
+      // Validate that move has valid from and to squares
+      if (!isValidSquare(move.from) || !isValidSquare(move.to)) {
+        log('[BoardViewModel] Skipping invalid move:', move);
+        continue;
+      }
+
+      const uci = `${move.from}${move.to}${move.promotion || ''}`;
+      const bucket = this._analyzedLegalMoves[uci];
+      
+      // Only include moves from allowed buckets
+      if (bucket && allowedBuckets.includes(bucket) && isValidSquare(move.from) && isValidSquare(move.to)) {
+        movesByBucket[bucket].push({
+          startSquare: move.from,
+          endSquare: move.to,
+          color: BUCKET_COLORS[bucket],
+        });
+      }
+    }
+
+    // Limit to max 3 arrows per bucket and combine
+    const arrows: Array<{ startSquare: string; endSquare: string; color: string }> = [];
+    for (const bucket of allowedBuckets) {
+      const bucketArrows = movesByBucket[bucket].slice(0, maxArrowsPerBucket);
+      arrows.push(...bucketArrows);
+      log(`[BoardViewModel] Added ${bucketArrows.length} ${bucket} arrows (found ${movesByBucket[bucket].length} total)`);
+    }
+
+    log('[BoardViewModel] Generated', arrows.length, 'total arrows');
+    return arrows;
+  }
+
+  /**
+   * Get analyzed legal moves count (for UI display)
+   */
+  get analyzedLegalMovesCount(): number {
+    return Object.keys(this._analyzedLegalMoves).length;
   }
 
   /**

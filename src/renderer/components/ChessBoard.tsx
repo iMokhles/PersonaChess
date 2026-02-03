@@ -100,18 +100,68 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
   const handleSquareClick = useCallback(({ square, piece }: { square: Square; piece?: string }) => {
     log('[ChessBoard] onSquareClick called', { square, piece, moveFrom });
 
-    // Check if user can move this piece (when auto-play is enabled)
-    if (boardViewModel.autoPlayEnabled && piece) {
-      const pieceAtSquare = boardViewModel.getPieceAt(square);
-      if (pieceAtSquare && pieceAtSquare.color === boardViewModel.enginePlaysFor) {
-        log('[ChessBoard] Cannot click engine\'s pieces when auto-play is enabled');
+    // Square clicked to move to, check if valid move (exactly like the example)
+    if (moveFrom) {
+      const moves = boardViewModel.getLegalMoves(moveFrom as Square);
+      const foundMove = moves.find(m => m.from === moveFrom && m.to === square);
+      log('[ChessBoard] Looking for move from', moveFrom, 'to', square, 'Found:', foundMove);
+
+      // If it's a valid move, make it (this allows capturing engine pieces)
+      if (foundMove) {
+        const moveSuccess = boardViewModel.makeMove(moveFrom as Square, square);
+        if (moveSuccess) {
+          setMoveFrom(null);
+          setOptionSquares({});
+          log('[ChessBoard] Move successful, cleared selection');
+        } else {
+          log('[ChessBoard] Move failed');
+        }
         return;
       }
+
+      // Not a valid move - check if clicked on new piece
+      log('[ChessBoard] Not a valid move, checking for new piece');
+      
+      // If clicked on an engine piece when auto-play is enabled, don't allow selecting it
+      if (boardViewModel.autoPlayEnabled && piece) {
+        const pieceAtSquare = boardViewModel.getPieceAt(square);
+        if (pieceAtSquare && pieceAtSquare.color === boardViewModel.enginePlaysFor) {
+          log('[ChessBoard] Cannot select engine\'s pieces to move');
+          setMoveFrom(null);
+          setOptionSquares({});
+          return;
+        }
+      }
+      
+      // Check if clicked on new piece (user's piece)
+      const hasMoveOptions = getMoveOptions(square as Square);
+
+      // If new piece, setMoveFrom, otherwise clear moveFrom (exactly like example)
+      setMoveFrom(hasMoveOptions ? square : null);
+      if (!hasMoveOptions) {
+        setOptionSquares({});
+      }
+
+      // Return early
+      return;
     }
 
     // Piece clicked to move (exactly like the example)
     if (!moveFrom && piece) {
       log('[ChessBoard] Piece clicked, getting move options');
+      
+      // Check if this is an engine piece (when auto-play is enabled)
+      // If so, don't allow selecting it to move
+      if (boardViewModel.autoPlayEnabled) {
+        const pieceAtSquare = boardViewModel.getPieceAt(square);
+        if (pieceAtSquare && pieceAtSquare.color === boardViewModel.enginePlaysFor) {
+          log('[ChessBoard] Cannot select engine\'s pieces to move');
+          setOptionSquares({});
+          setMoveFrom(null);
+          return;
+        }
+      }
+      
       // Get the move options for the square
       const hasMoveOptions = getMoveOptions(square as Square);
 
@@ -123,56 +173,6 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
 
       // Return early
       return;
-    }
-
-    // Square clicked to move to, check if valid move (exactly like the example)
-    if (moveFrom) {
-      const moves = boardViewModel.getLegalMoves(moveFrom as Square);
-      const foundMove = moves.find(m => m.from === moveFrom && m.to === square);
-      log('[ChessBoard] Looking for move from', moveFrom, 'to', square, 'Found:', foundMove);
-
-      // Not a valid move
-      if (!foundMove) {
-        log('[ChessBoard] Not a valid move, checking for new piece');
-        // Check if clicked on new piece
-        const hasMoveOptions = getMoveOptions(square as Square);
-
-        // If new piece, setMoveFrom, otherwise clear moveFrom (exactly like example)
-        setMoveFrom(hasMoveOptions ? square : null);
-        if (!hasMoveOptions) {
-          setOptionSquares({});
-        }
-
-        // Return early
-        return;
-      }
-
-      // Is normal move (exactly like the example)
-      const moveSuccess = boardViewModel.makeMove(moveFrom as Square, square);
-      
-      if (moveSuccess) {
-        // Clear moveFrom and optionSquares (exactly like example)
-        setMoveFrom(null);
-        setOptionSquares({});
-        log('[ChessBoard] Move successful, cleared selection');
-        // Note: Auto-play happens automatically in ViewModel
-      } else {
-        log('[ChessBoard] Move failed, checking for new piece');
-        // If invalid, setMoveFrom and getMoveOptions (exactly like example)
-        const pieceAtSquare = boardViewModel.getPieceAt(square);
-        if (pieceAtSquare) {
-          const hasMoveOptions = getMoveOptions(square as Square);
-          if (hasMoveOptions) {
-            setMoveFrom(square);
-          } else {
-            setMoveFrom(null);
-            setOptionSquares({});
-          }
-        } else {
-          setMoveFrom(null);
-          setOptionSquares({});
-        }
-      }
     }
   }, [moveFrom, getMoveOptions]);
 
@@ -239,14 +239,45 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
 
   log('[ChessBoard] Rendering with FEN:', boardViewModel.fen, 'MoveFrom:', moveFrom, 'OptionSquares:', Object.keys(optionSquares));
 
+  // Get move arrows from ViewModel
+  const moveArrows = useMemo(() => {
+    const arrows = boardViewModel.moveArrows;
+    // Validate arrows format - ensure all entries are valid Arrow objects
+    const validArrows = arrows.filter(arrow => {
+      if (!arrow || typeof arrow !== 'object') {
+        log('[ChessBoard] Invalid arrow format (not an object):', arrow);
+        return false;
+      }
+      if (!arrow.startSquare || !arrow.endSquare || !arrow.color) {
+        log('[ChessBoard] Invalid arrow format (missing properties):', arrow);
+        return false;
+      }
+      const { startSquare, endSquare, color } = arrow;
+      if (typeof startSquare !== 'string' || typeof endSquare !== 'string' || typeof color !== 'string') {
+        log('[ChessBoard] Invalid arrow values (wrong types):', arrow);
+        return false;
+      }
+      // Validate square format (a-h, 1-8)
+      if (!/^[a-h][1-8]$/.test(startSquare) || !/^[a-h][1-8]$/.test(endSquare)) {
+        log('[ChessBoard] Invalid square format in arrow:', arrow);
+        return false;
+      }
+      return true;
+    });
+    log('[ChessBoard] Valid arrows:', validArrows.length, 'out of', arrows.length);
+    return validArrows;
+  }, [boardViewModel.showMoveArrows, boardViewModel.analyzedLegalMovesCount, boardViewModel.fen]);
+
   // Try using options prop first (like example), fallback to direct props
   const chessboardOptions = {
     onPieceDrop: handlePieceDrop,
     onSquareClick: handleSquareClick,
     position: boardViewModel.fen,
     squareStyles: squareStyles,
+    arrows: moveArrows.length > 0 ? moveArrows : undefined, // Only pass arrows if we have valid ones
     id: 'click-or-drag-to-move',
     boardWidth: boardWidth,
+    boardOrientation: boardViewModel.boardFlipped ? 'black' : 'white',
     arePiecesDraggable: true,
     customBoardStyle: {
       borderRadius: '8px',

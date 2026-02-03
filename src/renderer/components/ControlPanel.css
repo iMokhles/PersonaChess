@@ -311,18 +311,60 @@
   gap: 6px;
 }
 
+/* Board Controls */
+.board-controls {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.board-controls .btn.active {
+  background: rgba(74, 158, 255, 0.2);
+  border-color: rgba(74, 158, 255, 0.4);
+  color: #4a9eff;
+}
+
 /* Current FEN */
 .current-fen {
   margin-top: 6px;
 }
 
+.fen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
 .current-fen label {
-  display: block;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.4);
-  margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.btn-restore-fen {
+  padding: 4px 8px;
+  background: rgba(74, 158, 255, 0.15);
+  border: 1px solid rgba(74, 158, 255, 0.3);
+  border-radius: 6px;
+  color: #4a9eff;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-restore-fen:hover:not(:disabled) {
+  background: rgba(74, 158, 255, 0.25);
+  border-color: rgba(74, 158, 255, 0.4);
+  color: #5aa8ff;
+}
+
+.btn-restore-fen:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .fen-display {
@@ -330,6 +372,7 @@
   background: rgba(0, 0, 0, 0.3);
   border-radius: 8px;
   overflow-x: auto;
+  margin-bottom: 6px;
 }
 
 .fen-display code {
@@ -337,6 +380,29 @@
   font-size: 10px;
   color: rgba(255, 255, 255, 0.6);
   white-space: nowrap;
+}
+
+.fen-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.fen-saved-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.fen-saved-indicator.saved {
+  color: rgba(38, 166, 65, 0.8);
+}
+
+.fen-history-count {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 /* Modal */

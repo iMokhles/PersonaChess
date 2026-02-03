@@ -9,8 +9,8 @@ import { normalizeBucketConfig, validateBucketConfig } from '../engine/movePicke
 
 export class ConfigViewModel {
   bucketConfig: BucketConfig = { ...DEFAULT_BUCKET_CONFIG };
-  depth: number = 20;
-  multiPV: number = 12;
+  depth = 8;
+  multiPV = 12;
 
   constructor() {
     makeAutoObservable(this, {
