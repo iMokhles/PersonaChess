@@ -2,6 +2,8 @@
 
 A desktop chess application that generates human-like moves using Stockfish analysis. Built with Electron, React, TypeScript, and following the MVVM (Model-View-ViewModel) architectural pattern.
 
+![PersonaChess Screenshot](./screenshots/screenshot1.png)
+
 ## 🎯 Overview
 
 PersonaChess is a chess application that uses the Stockfish UCI engine (WASM) to analyze chess positions and generate moves that feel more human-like. Instead of always playing the best move, it classifies moves into quality buckets (Best, Great, Excellent, Good, Inaccuracy, Mistake, Blunder) and allows you to control the probability distribution of each bucket type.
@@ -19,7 +21,8 @@ PersonaChess is a chess application that uses the Stockfish UCI engine (WASM) to
 - **Move Quality Classification**: Moves are automatically classified into quality buckets based on evaluation loss
 - **Player Move Analysis**: Real-time analysis and display of player move quality (Best, Great, Excellent, Good, Inaccuracy, Mistake, Blunder)
 - **Move Quality Arrows**: Visual arrows showing move quality on the board (Excellent, Good, Mistake, Blunder - max 3 per quality)
-- **Board Orientation**: Flip board to view from either side's perspective
+- **Board Orientation**: Flip board to view from either side's perspective (automatically flips engine playing color)
+- **Side-by-Side Layout**: Move Quality Distribution and Game Controls displayed side-by-side for better UX
 - **Configurable Engine Settings**: Adjust analysis depth, MultiPV, and move quality distributions
 
 ## 🏗️ Architecture
@@ -71,7 +74,7 @@ React functional components using `observer()` from `mobx-react-lite`:
 - Node.js (v16 or higher)
 - npm or yarn
 
-### Setup
+### Quick Start
 
 1. Clone the repository:
 ```bash
@@ -90,6 +93,30 @@ The `postinstall` script will automatically copy Stockfish WASM files to the `pu
 ```bash
 npm start
 ```
+
+The application will launch in a new Electron window.
+
+### Building for Production
+
+To create a distributable package:
+```bash
+npm run package
+```
+
+To create platform-specific installers:
+```bash
+npm run make
+```
+
+## 🖥️ User Interface
+
+The application features a clean, modern dark-themed interface with three main sections:
+
+- **Left Panel**: Interactive chess board with move indicators and quality arrows
+- **Middle Panel**: Game controls (auto-play, undo/redo, FEN/PGN loading, board controls)
+- **Right Panel**: Move Quality Distribution sliders and Engine Settings
+
+The layout is optimized for horizontal viewing with all controls easily accessible.
 
 ## 🚀 Usage
 
@@ -137,7 +164,7 @@ npm start
 
 ### Board Controls
 
-- **Flip Board**: Click the "🔄 Flip Board" button to flip the board orientation (view from Black's or White's perspective)
+- **Flip Board**: Click the "🔄 Flip Board" button to flip the board orientation (view from Black's or White's perspective). The engine's playing color automatically flips to match your new perspective
 - **FEN History**: Current FEN is automatically saved to localStorage. Use the "Restore" button to reload the last saved position
 - **FEN Status**: Indicator shows whether the current position is saved and how many positions are in history (max 50)
 
@@ -165,7 +192,8 @@ PersonaChess/
 │   │   ├── stockfish.service.ts
 │   │   ├── moveClassifier.ts
 │   │   ├── movePicker.ts
-│   │   └── types.ts
+│   │   ├── types.ts
+│   │   └── index.ts
 │   ├── viewmodels/          # ViewModel layer (MobX stores)
 │   │   ├── BoardViewModel.ts
 │   │   ├── EngineViewModel.ts
@@ -174,19 +202,31 @@ PersonaChess/
 │   ├── renderer/            # View layer (React components)
 │   │   ├── components/
 │   │   │   ├── ChessBoard.tsx
+│   │   │   ├── ChessBoard.css
 │   │   │   ├── ControlPanel.tsx
+│   │   │   ├── ControlPanel.css
 │   │   │   ├── ConfigPanel.tsx
+│   │   │   ├── ConfigPanel.css
 │   │   │   └── index.ts
+│   │   ├── styles/
+│   │   │   └── global.css
 │   │   ├── App.tsx
 │   │   ├── App.css
 │   │   └── index.tsx
 │   ├── main.ts              # Electron main process
 │   └── preload.ts           # Electron preload script
 ├── public/                  # Static assets (Stockfish WASM files)
+│   ├── stockfish.js
+│   └── stockfish.wasm
+├── screenshots/             # Application screenshots
+│   └── screenshot1.png
 ├── package.json
 ├── tsconfig.json
 ├── vite.renderer.config.ts
+├── vite.main.config.ts
+├── vite.preload.config.ts
 ├── forge.config.ts
+├── .gitignore
 └── README.md
 ```
 
@@ -199,21 +239,6 @@ PersonaChess/
 - `npm run make`: Create distributables (installers)
 - `npm run lint`: Run ESLint
 
-### Building for Production
-
-```bash
-npm run package
-```
-
-This creates a packaged version in the `out/` directory.
-
-### Creating Installers
-
-```bash
-npm run make
-```
-
-This creates platform-specific installers (Windows, macOS, Linux) in the `out/make/` directory.
 
 ## 🎨 Features
 
@@ -230,7 +255,7 @@ This creates platform-specific installers (Windows, macOS, Linux) in the `out/ma
 - [x] Single-move undo/redo
 - [x] FEN/PGN loading
 - [x] FEN history with localStorage persistence (auto-save, restore on startup)
-- [x] Board flip functionality (view from either side)
+- [x] Board flip functionality (view from either side, automatically flips engine color)
 - [x] Player move quality analysis and display
 - [x] Move quality arrows visualization (Excellent, Good, Mistake, Blunder)
 - [x] Move arrows filtering (max 3 per quality type)
@@ -239,8 +264,10 @@ This creates platform-specific installers (Windows, macOS, Linux) in the `out/ma
 - [x] Engine settings (depth, MultiPV)
 - [x] Game status display (check, checkmate, stalemate, draw)
 - [x] Move history tracking
-- [x] Responsive horizontal layout
+- [x] Responsive horizontal layout with side-by-side controls
 - [x] FEN status indicator (saved/unsaved, history count)
+- [x] Performance optimizations (debounced analysis, reduced logging)
+- [x] Automatic FEN persistence and restoration
 
 ### 🚧 TODO / Future Enhancements
 
@@ -272,10 +299,23 @@ This creates platform-specific installers (Windows, macOS, Linux) in the `out/ma
 ## 🐛 Known Issues
 
 - Stockfish analysis timeout is set to 30 seconds; very deep analysis may timeout
-- Auto-play may trigger multiple times if moves are made very quickly (mitigated with delays)
 - Move arrows analysis may take a few seconds for positions with many legal moves
 - FEN history is limited to 50 positions (oldest positions are automatically removed)
 - Move arrows only show up to 3 arrows per quality type (Excellent, Good, Mistake, Blunder)
+- Performance optimizations have been implemented to prevent rendering flickering
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+### Development Guidelines
+
+- Follow the MVVM architecture pattern strictly
+- Keep Model layer pure TypeScript (no React/MobX dependencies)
+- Use MobX observables/actions/computed in ViewModel layer
+- React components should be functional with `observer()` wrapper
+- Follow TypeScript best practices
+- Ensure code is properly typed
 
 ## 📝 License
 
@@ -284,7 +324,7 @@ MIT License - see LICENSE file for details
 ## 👤 Author
 
 **iMokhles**
-- Email: mokhles@blockgemini.com
+- Email: mokhlashussein@aol.com
 
 ## 🙏 Acknowledgments
 
