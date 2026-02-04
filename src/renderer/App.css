@@ -69,13 +69,22 @@
 
 .controls-section {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 20px;
-  width: 450px;
+  width: auto;
+  flex: 1;
   flex-shrink: 0;
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  align-items: flex-start;
+}
+
+.controls-section > * {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
 }
 
 /* Footer */
