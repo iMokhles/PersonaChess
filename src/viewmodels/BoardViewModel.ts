@@ -35,6 +35,7 @@ export class BoardViewModel {
   // Store analyzed moves as an object for MobX observability
   private _analyzedLegalMoves: Record<string, MoveBucket> = {};
   private redoStack: Move[] = []; // Stack of moves that were undone for redo functionality
+  private _analysisTimeout: NodeJS.Timeout | null = null; // Timeout for debouncing move analysis
   private readonly FEN_STORAGE_KEY = 'personachess_current_fen';
   private readonly FEN_HISTORY_KEY = 'personachess_fen_history';
   private readonly MAX_HISTORY = 50; // Maximum number of FEN positions to store
@@ -379,20 +380,34 @@ export class BoardViewModel {
     this.saveFenToHistory();
     log('[BoardViewModel] updateState - FEN:', this.fen, 'History length:', this.history.length);
     
-    // Automatically re-analyze moves if arrows are enabled
-    if (this.showMoveArrows && !this.isGameOver) {
-      // Clear previous analysis and trigger new analysis
+    // Automatically re-analyze moves if arrows are enabled (debounced to prevent excessive calls)
+    if (this.showMoveArrows && !this.isGameOver && !this.isAnalyzingMoves) {
+      // Clear previous analysis and trigger new analysis asynchronously
+      // Use setTimeout to debounce and prevent re-render loops
       this._analyzedLegalMoves = {};
-      this.analyzeAllMoves();
+      // Clear any pending analysis timeout
+      if (this._analysisTimeout) {
+        clearTimeout(this._analysisTimeout);
+      }
+      // Debounce analysis to prevent excessive calls
+      this._analysisTimeout = setTimeout(() => {
+        this.analyzeAllMoves().catch(err => {
+          console.error('[BoardViewModel] Failed to analyze moves:', err);
+        });
+      }, 300); // 300ms debounce
     }
   }
 
+  private _analysisTimeout: NodeJS.Timeout | null = null;
+
   /**
-   * Flip the board orientation
+   * Flip the board orientation and engine playing color
    */
   flipBoard(): void {
     this.boardFlipped = !this.boardFlipped;
-    log('[BoardViewModel] Board flipped, orientation:', this.boardFlipped ? 'black' : 'white');
+    // Flip the engine's playing color when board is flipped
+    this.enginePlaysFor = this.enginePlaysFor === 'w' ? 'b' : 'w';
+    log('[BoardViewModel] Board flipped, orientation:', this.boardFlipped ? 'black' : 'white', 'Engine now plays for:', this.enginePlaysFor === 'w' ? 'White' : 'Black');
   }
 
   /**
@@ -502,10 +517,21 @@ export class BoardViewModel {
    * Toggle showing move arrows
    */
   toggleMoveArrows(): void {
+    // Clear any pending analysis timeout
+    if (this._analysisTimeout) {
+      clearTimeout(this._analysisTimeout);
+      this._analysisTimeout = null;
+    }
+    
     this.showMoveArrows = !this.showMoveArrows;
-    if (this.showMoveArrows && Object.keys(this._analyzedLegalMoves).length === 0) {
+    if (this.showMoveArrows && Object.keys(this._analyzedLegalMoves).length === 0 && !this.isAnalyzingMoves) {
       // Auto-analyze if arrows are enabled and we don't have analysis yet
-      this.analyzeAllMoves();
+      this.analyzeAllMoves().catch(err => {
+        console.error('[BoardViewModel] Failed to analyze moves:', err);
+      });
+    } else if (!this.showMoveArrows) {
+      // Clear analysis when arrows are disabled to free memory
+      this._analyzedLegalMoves = {};
     }
   }
 

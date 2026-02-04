@@ -19,7 +19,7 @@ interface ChessBoardProps {
 }
 
 // Set to true for debugging, false for production
-const DEBUG = true;
+const DEBUG = false; // Disabled to prevent performance issues
 
 const log = (...args: any[]) => {
   if (DEBUG) console.log(...args);
@@ -217,8 +217,6 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
   const squareStyles = useMemo(() => {
     const styles: Record<string, React.CSSProperties> = { ...optionSquares };
     
-    log('[ChessBoard] Computing squareStyles, optionSquares keys:', Object.keys(optionSquares));
-    
     // Highlight last move (if not already highlighted by option squares)
     if (boardViewModel.lastMove && !moveFrom) {
       if (!styles[boardViewModel.lastMove.from]) {
@@ -233,38 +231,39 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
       }
     }
 
-    log('[ChessBoard] Final square styles:', Object.keys(styles));
     return styles;
   }, [optionSquares, boardViewModel.lastMove, moveFrom]);
 
-  log('[ChessBoard] Rendering with FEN:', boardViewModel.fen, 'MoveFrom:', moveFrom, 'OptionSquares:', Object.keys(optionSquares));
-
-  // Get move arrows from ViewModel
+  // Get move arrows from ViewModel (memoized to prevent excessive re-renders)
   const moveArrows = useMemo(() => {
+    if (!boardViewModel.showMoveArrows) {
+      return [];
+    }
+    
     const arrows = boardViewModel.moveArrows;
+    if (!arrows || arrows.length === 0) {
+      return [];
+    }
+    
     // Validate arrows format - ensure all entries are valid Arrow objects
     const validArrows = arrows.filter(arrow => {
       if (!arrow || typeof arrow !== 'object') {
-        log('[ChessBoard] Invalid arrow format (not an object):', arrow);
         return false;
       }
       if (!arrow.startSquare || !arrow.endSquare || !arrow.color) {
-        log('[ChessBoard] Invalid arrow format (missing properties):', arrow);
         return false;
       }
       const { startSquare, endSquare, color } = arrow;
       if (typeof startSquare !== 'string' || typeof endSquare !== 'string' || typeof color !== 'string') {
-        log('[ChessBoard] Invalid arrow values (wrong types):', arrow);
         return false;
       }
       // Validate square format (a-h, 1-8)
       if (!/^[a-h][1-8]$/.test(startSquare) || !/^[a-h][1-8]$/.test(endSquare)) {
-        log('[ChessBoard] Invalid square format in arrow:', arrow);
         return false;
       }
       return true;
     });
-    log('[ChessBoard] Valid arrows:', validArrows.length, 'out of', arrows.length);
+    
     return validArrows;
   }, [boardViewModel.showMoveArrows, boardViewModel.analyzedLegalMovesCount, boardViewModel.fen]);
 
