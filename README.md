@@ -271,30 +271,37 @@ PersonaChess/
 
 ### 🚧 TODO / Future Enhancements
 
-- [ ] Save/load game configurations
-- [ ] Export games to PGN
-- [ ] Move notation display (SAN) in move history
-- [ ] Opening book integration
-- [ ] Time controls
-- [ ] Multiple engine personalities (aggressive, defensive, etc.)
-- [ ] Move suggestions for human player
+#### High Priority (Core Features)
+- [ ] Export games to PGN format
+- [ ] Move notation display (SAN) in move history panel
 - [ ] Analysis panel showing engine evaluation and principal variation
-- [ ] Game replay functionality
-- [ ] Tournament mode
-- [ ] Statistics tracking (win/loss/draw)
-- [ ] Custom themes
-- [ ] Keyboard shortcuts
-- [ ] Multi-language support
-- [ ] Cloud sync for configurations
-- [ ] Engine strength presets (beginner, intermediate, advanced)
-- [ ] Move history panel with notation
+- [ ] Game replay functionality (step through move history)
+- [ ] Save/load game configurations (bucket settings, engine settings)
+
+#### Medium Priority (User Experience)
+- [ ] Keyboard shortcuts for common actions (undo, redo, flip board, etc.)
+- [ ] Move suggestions for human player (highlight best move)
+- [ ] Engine strength presets (beginner, intermediate, advanced) with predefined bucket configs
+- [ ] Custom themes (light mode, custom color schemes)
+- [ ] Statistics tracking (win/loss/draw, average move quality)
 - [ ] Position evaluation graph over time
-- [ ] Filter move arrows by specific quality buckets (currently shows Excellent, Good, Mistake, Blunder)
-- [ ] Show arrows for all move qualities (Best, Great, Inaccuracy)
-- [ ] Configurable arrow colors per quality bucket
-- [ ] Arrow animation effects
+
+#### Low Priority (Advanced Features)
+- [ ] Multiple engine personalities (aggressive, defensive, etc.) via different bucket configurations
+- [ ] Time controls (game timer, move timer)
+- [ ] Opening book integration (suggest opening moves)
+- [ ] Show arrows for all move qualities (Best, Great, Inaccuracy) - currently limited to Excellent, Good, Mistake, Blunder
+- [ ] Configurable arrow colors per quality bucket (UI for customizing colors)
+- [ ] Arrow animation effects (fade in/out, pulse)
 - [ ] Export FEN history to file
 - [ ] Import FEN history from file
+
+#### Removed (Not Feasible or Redundant)
+- ~~Move history panel with notation~~ - Covered by "Move notation display (SAN) in move history"
+- ~~Filter move arrows by specific quality buckets~~ - Already implemented (shows Excellent, Good, Mistake, Blunder)
+- ~~Cloud sync for configurations~~ - Requires backend infrastructure, better suited for local storage
+- ~~Tournament mode~~ - Too complex for current scope, better as separate feature
+- ~~Multi-language support~~ - Low priority for MVP, can be added later if needed
 
 ## 🐛 Known Issues
 
