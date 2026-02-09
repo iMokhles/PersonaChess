@@ -4,17 +4,21 @@
  */
 
 import { makeAutoObservable, action } from 'mobx';
-import { BucketConfig, MoveBucket, DEFAULT_BUCKET_CONFIG } from '../engine/types';
+import { BucketConfig, MoveBucket, DEFAULT_BUCKET_CONFIG, MoveQualityPresetId, MOVE_QUALITY_PRESETS } from '../engine/types';
 import { normalizeBucketConfig, validateBucketConfig } from '../engine/movePicker';
 
 export class ConfigViewModel {
   bucketConfig: BucketConfig = { ...DEFAULT_BUCKET_CONFIG };
+  /** Id of the active preset, or null if using custom distribution */
+  currentPresetId: MoveQualityPresetId | null = 'medium';
   depth = 8;
   multiPV = 12;
 
   constructor() {
     makeAutoObservable(this, {
       setBucketValue: action,
+      setBucketConfig: action,
+      applyPreset: action,
       resetToDefaults: action,
       normalizeConfig: action,
       setDepth: action,
@@ -27,6 +31,7 @@ export class ConfigViewModel {
    */
   setBucketValue(bucket: MoveBucket, value: number): void {
     const clampedValue = Math.max(0, Math.min(100, value));
+    this.currentPresetId = null; // switching to custom
     this.bucketConfig = {
       ...this.bucketConfig,
       [bucket]: clampedValue,
@@ -34,9 +39,28 @@ export class ConfigViewModel {
   }
 
   /**
-   * Reset bucket configuration to defaults
+   * Set the full bucket config (e.g. when applying a preset)
+   */
+  setBucketConfig(config: BucketConfig): void {
+    this.bucketConfig = { ...config };
+  }
+
+  /**
+   * Apply a predefined move quality preset by id
+   */
+  applyPreset(presetId: MoveQualityPresetId): void {
+    const preset = MOVE_QUALITY_PRESETS.find(p => p.id === presetId);
+    if (preset) {
+      this.currentPresetId = presetId;
+      this.bucketConfig = { ...preset.config };
+    }
+  }
+
+  /**
+   * Reset bucket configuration to defaults (medium preset)
    */
   resetToDefaults(): void {
+    this.currentPresetId = 'medium';
     this.bucketConfig = { ...DEFAULT_BUCKET_CONFIG };
   }
 

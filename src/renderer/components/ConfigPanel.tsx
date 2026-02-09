@@ -8,7 +8,7 @@ import React, { useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
 import { configViewModel } from '../../viewmodels';
 import { engineViewModel } from '../../viewmodels';
-import { MoveBucket, BUCKET_LABELS, BUCKET_COLORS, BUCKET_EVAL_RANGES } from '../../engine/types';
+import { MoveBucket, BUCKET_LABELS, BUCKET_COLORS, BUCKET_EVAL_RANGES, MOVE_QUALITY_PRESETS, MoveQualityPresetId } from '../../engine/types';
 import './ConfigPanel.css';
 
 const BUCKETS: MoveBucket[] = ['best', 'great', 'excellent', 'good', 'inaccuracy', 'mistake', 'blunder'];
@@ -71,7 +71,11 @@ export const ConfigPanel: React.FC = observer(() => {
     configViewModel.resetToDefaults();
   }, []);
 
-  const { totalPercentage, isValid } = configViewModel;
+  const handlePresetSelect = useCallback((presetId: MoveQualityPresetId) => {
+    configViewModel.applyPreset(presetId);
+  }, []);
+
+  const { totalPercentage, isValid, currentPresetId } = configViewModel;
   const moveStats = engineViewModel.moveStats;
 
   return (
@@ -79,8 +83,33 @@ export const ConfigPanel: React.FC = observer(() => {
       <div className="panel-header">
         <h3>Move Quality Distribution</h3>
         <p className="panel-description">
-          Set the probability of playing moves from each quality bucket
+          Choose a preset or set the probability of playing moves from each quality bucket
         </p>
+      </div>
+
+      <div className="presets-section">
+        <label className="presets-label">Preset</label>
+        <div className="presets-buttons" role="group" aria-label="Move quality preset">
+          {MOVE_QUALITY_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className={`preset-btn ${currentPresetId === preset.id ? 'active' : ''}`}
+              onClick={() => handlePresetSelect(preset.id)}
+              title={preset.description}
+            >
+              {preset.label}
+            </button>
+          ))}
+          {currentPresetId === null && (
+            <span className="preset-custom-badge">Custom</span>
+          )}
+        </div>
+        {currentPresetId !== null && (
+          <p className="preset-description">
+            {MOVE_QUALITY_PRESETS.find(p => p.id === currentPresetId)?.description}
+          </p>
+        )}
       </div>
 
       <div className="sliders-container">

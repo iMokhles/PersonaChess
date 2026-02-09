@@ -58,6 +58,90 @@ export const DEFAULT_BUCKET_CONFIG: BucketConfig = {
   blunder: 0,
 };
 
+/** Preset id for move quality distribution */
+export type MoveQualityPresetId = 'low' | 'medium' | 'hard' | 'super_hard' | 'aggressive';
+
+export interface MoveQualityPreset {
+  id: MoveQualityPresetId;
+  label: string;
+  description: string;
+  config: BucketConfig;
+}
+
+/** Predefined move quality distributions (percentages sum to 100) */
+export const MOVE_QUALITY_PRESETS: MoveQualityPreset[] = [
+  {
+    id: 'low',
+    label: 'Low',
+    description: 'Easier — more good/inaccuracy/mistake moves',
+    config: {
+      best: 15,
+      great: 15,
+      excellent: 20,
+      good: 25,
+      inaccuracy: 15,
+      mistake: 7,
+      blunder: 3,
+    },
+  },
+  {
+    id: 'medium',
+    label: 'Medium',
+    description: 'Balanced mix of qualities',
+    config: {
+      best: 40,
+      great: 25,
+      excellent: 20,
+      good: 10,
+      inaccuracy: 4,
+      mistake: 1,
+      blunder: 0,
+    },
+  },
+  {
+    id: 'hard',
+    label: 'Hard',
+    description: 'Favors best and great moves',
+    config: {
+      best: 55,
+      great: 25,
+      excellent: 15,
+      good: 5,
+      inaccuracy: 0,
+      mistake: 0,
+      blunder: 0,
+    },
+  },
+  {
+    id: 'super_hard',
+    label: 'Super Hard',
+    description: 'Almost only best and great',
+    config: {
+      best: 70,
+      great: 25,
+      excellent: 5,
+      good: 0,
+      inaccuracy: 0,
+      mistake: 0,
+      blunder: 0,
+    },
+  },
+  {
+    id: 'aggressive',
+    label: 'Aggressive',
+    description: 'Risky — more inaccuracies and mistakes',
+    config: {
+      best: 20,
+      great: 20,
+      excellent: 15,
+      good: 15,
+      inaccuracy: 15,
+      mistake: 10,
+      blunder: 5,
+    },
+  },
+];
+
 export const BUCKET_EVAL_RANGES: Record<MoveBucket, [number, number]> = {
   best: [0, 10],
   great: [10, 30],

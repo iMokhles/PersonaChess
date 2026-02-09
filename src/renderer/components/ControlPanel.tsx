@@ -90,6 +90,18 @@ export const ControlPanel: React.FC = observer(() => {
   const canRedo = boardViewModel.canRedo;
   const autoPlayEnabled = boardViewModel.autoPlayEnabled;
   const enginePlaysFor = boardViewModel.enginePlaysFor;
+  const lastPlayerMoveQuality = boardViewModel.lastPlayerMoveQuality;
+  
+  // Find the last user move (move not made by the engine)
+  const lastUserMove = (() => {
+    if (boardViewModel.history.length === 0) return null;
+    for (let i = boardViewModel.history.length - 1; i >= 0; i--) {
+      if (boardViewModel.history[i].color !== enginePlaysFor) {
+        return boardViewModel.history[i];
+      }
+    }
+    return null;
+  })();
 
   return (
     <div className="control-panel">
@@ -115,6 +127,29 @@ export const ControlPanel: React.FC = observer(() => {
             }}
           >
             {BUCKET_LABELS[lastBucket]} Move
+          </div>
+        )}
+      </div>
+
+      {/* User Move Status */}
+      <div className="status-section user-move-section">
+        <div className="status-message">
+          {lastUserMove ? (
+            <span>Your last move: {lastUserMove.san}</span>
+          ) : (
+            <span>No user move yet</span>
+          )}
+        </div>
+        
+        {lastPlayerMoveQuality && (
+          <div 
+            className="last-move-badge"
+            style={{ 
+              backgroundColor: BUCKET_COLORS[lastPlayerMoveQuality],
+              boxShadow: `0 0 12px ${BUCKET_COLORS[lastPlayerMoveQuality]}40`
+            }}
+          >
+            {BUCKET_LABELS[lastPlayerMoveQuality]} Move
           </div>
         )}
       </div>
