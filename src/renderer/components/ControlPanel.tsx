@@ -8,6 +8,7 @@ import React, { useState, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
 import { boardViewModel, engineViewModel } from '../../viewmodels';
 import { BUCKET_LABELS, BUCKET_COLORS } from '../../engine/types';
+import { PREDEFINED_OPENINGS, getOpeningById } from '../../engine/openings';
 import './ControlPanel.css';
 
 export const ControlPanel: React.FC = observer(() => {
@@ -15,6 +16,7 @@ export const ControlPanel: React.FC = observer(() => {
   const [pgnInput, setPgnInput] = useState('');
   const [showFenModal, setShowFenModal] = useState(false);
   const [showPgnModal, setShowPgnModal] = useState(false);
+  const [selectedOpeningId, setSelectedOpeningId] = useState<string>('');
 
   const handleSolveNextMove = useCallback(async () => {
     await boardViewModel.solveNextMove();
@@ -39,6 +41,15 @@ export const ControlPanel: React.FC = observer(() => {
       }
     }
   }, [pgnInput]);
+
+  const handleLoadOpening = useCallback(() => {
+    if (!selectedOpeningId) return;
+    const opening = getOpeningById(selectedOpeningId);
+    if (opening && boardViewModel.loadPgn(opening.pgn)) {
+      const sideLabel = opening.side === 'white' ? 'White' : 'Black';
+      boardViewModel.statusMessage = `Opening: ${opening.name} (${sideLabel})`;
+    }
+  }, [selectedOpeningId]);
 
   const handleReset = useCallback(() => {
     boardViewModel.reset();
@@ -288,6 +299,35 @@ export const ControlPanel: React.FC = observer(() => {
         >
           Load PGN
         </button>
+      </div>
+
+      {/* Predefined Openings */}
+      <div className="openings-section">
+        <label className="openings-label">Load opening</label>
+        <div className="openings-row">
+          <select
+            className="openings-select"
+            value={selectedOpeningId}
+            onChange={(e) => setSelectedOpeningId(e.target.value)}
+            aria-label="Select a predefined opening"
+          >
+            <option value="">— Select opening —</option>
+            {PREDEFINED_OPENINGS.map((op) => (
+              <option key={op.id} value={op.id} title={op.description}>
+                {op.name} ({op.side === 'white' ? 'White' : 'Black'})
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={handleLoadOpening}
+            disabled={!selectedOpeningId || boardViewModel.isThinking}
+            title={selectedOpeningId ? `Load ${getOpeningById(selectedOpeningId)?.name ?? ''}` : 'Select an opening first'}
+          >
+            Load Opening
+          </button>
+        </div>
       </div>
 
       {/* Board Controls */}
