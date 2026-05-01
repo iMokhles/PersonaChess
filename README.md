@@ -1,353 +1,197 @@
 # PersonaChess
 
-A desktop chess application that generates human-like moves using Stockfish analysis. Built with Electron, React, TypeScript, and following the MVVM (Model-View-ViewModel) architectural pattern.
+PersonaChess is an Electron desktop chess app that uses Stockfish for analysis, then deliberately chooses moves through configurable human-like quality buckets instead of always playing the top engine line.
 
 ![PersonaChess Screenshot](./screenshots/screenshot1.png)
 
-## 🎯 Overview
+## What It Does
 
-PersonaChess is a chess application that uses the Stockfish UCI engine (WASM) to analyze chess positions and generate moves that feel more human-like. Instead of always playing the best move, it classifies moves into quality buckets (Best, Great, Excellent, Good, Inaccuracy, Mistake, Blunder) and allows you to control the probability distribution of each bucket type.
+- Play on an interactive board with drag/drop or click-to-move
+- Ask the engine to play one move manually or let it auto-play for White or Black
+- Load positions from `FEN`, games/lines from `PGN`, or built-in openings
+- Tune how often the engine plays `Best`, `Great`, `Excellent`, `Good`, `Inaccuracy`, `Mistake`, and `Blunder` moves
+- Enable optional advanced behaviors with independent feature toggles
+- Persist local board state, engine configuration, and brilliant-move session data when enabled
 
-### Key Features
+## Personas And Presets
 
-- **Human-like Move Generation**: Moves are selected based on configurable quality distributions rather than always playing the best move
-- **Stockfish Integration**: Uses Stockfish WASM engine for deep position analysis (configurable depth and MultiPV)
-- **Interactive Chess Board**: Drag-and-drop or click-to-move piece interaction with visual move indicators
-- **Auto-Play Mode**: Engine can automatically play for White or Black after your moves
-- **Manual Play Mode**: Play against the engine manually, controlling when it analyzes and moves
-- **Undo/Redo**: Single-move undo and redo functionality
-- **FEN/PGN Support**: Load positions from FEN strings or entire games from PGN
-- **FEN History**: Automatic FEN position saving with localStorage, restore on app restart
-- **Move Quality Classification**: Moves are automatically classified into quality buckets based on evaluation loss
-- **Player Move Analysis**: Real-time analysis and display of player move quality (Best, Great, Excellent, Good, Inaccuracy, Mistake, Blunder)
-- **Move Quality Arrows**: Visual arrows showing move quality on the board (Excellent, Good, Mistake, Blunder - max 3 per quality)
-- **Board Orientation**: Flip board to view from either side's perspective (automatically flips engine playing color)
-- **Side-by-Side Layout**: Move Quality Distribution and Game Controls displayed side-by-side for better UX
-- **Configurable Engine Settings**: Adjust analysis depth, MultiPV, and move quality distributions
+Move quality presets shape the overall style of play:
 
-## 🏗️ Architecture
+- `Low`: easier play, more inaccuracies and mistakes
+- `Medium`: balanced default
+- `Hard`: stronger play with mostly best/great moves
+- `Super Hard`: near-engine play
+- `Aggressive`: more risky and tactical distributions
 
-PersonaChess follows a strict **MVVM (Model-View-ViewModel)** architectural pattern:
+These presets control bucket percentages only. Optional advanced toggles can further influence selection.
 
-### Model Layer (`src/engine/`)
-Pure TypeScript, no React or MobX dependencies. Contains:
-- **`stockfish.service.ts`**: Manages communication with Stockfish WASM engine via Web Workers
-- **`moveClassifier.ts`**: Classifies moves into quality buckets based on `evalLoss`
-- **`movePicker.ts`**: Implements weighted random move selection based on bucket percentages
-- **`types.ts`**: TypeScript interfaces and types for the engine layer
+## Advanced Feature Flags
 
-### ViewModel Layer (`src/viewmodels/`)
-MobX stores that connect the Model with the View:
-- **`BoardViewModel.ts`**: Manages chess board state, move history, game status, undo/redo
-- **`EngineViewModel.ts`**: Manages Stockfish engine state, analysis results, move picking
-- **`ConfigViewModel.ts`**: Manages user configuration (bucket percentages, engine settings)
+All advanced options are independent. You can mix old and new behavior safely.
 
-### View Layer (`src/renderer/`)
-React functional components using `observer()` from `mobx-react-lite`:
-- **`App.tsx`**: Main application component, orchestrates layout
-- **`ChessBoard.tsx`**: Chess board component using `react-chessboard`
-- **`ControlPanel.tsx`**: Game controls (undo, redo, reset, load FEN/PGN, auto-play toggle)
-- **`ConfigPanel.tsx`**: Configuration sliders for move quality distributions
+- `securityDevToolsOnly`
+  Limits automatic DevTools opening to development builds only.
+- `persistEngineConfig`
+  Persists depth, MultiPV, preset, bucket percentages, feature options, session board state, and brilliant tracking.
+- `useDeterministicRng`
+  Uses seeded move selection for reproducible sessions.
+- `useMoveAnalysisCache`
+  Reuses Stockfish analysis by `FEN + depth + MultiPV`.
+- `useImprovedMoveClassification`
+  Uses smarter fallback logic and keeps unknown moves out of `Good` by default.
+- `usePositionComplexity`
+  Adjusts move-quality weights slightly based on how sharp the position is.
+- `usePersonaBehaviorBias`
+  Adds lightweight aggressive/safe/tactical preferences on top of bucket choice.
+- `useHumanDelaySimulation`
+  Adds persona/complexity-based delay before engine auto-play moves.
+- `useBrilliantMoveBudget`
+  Allows a per-game budget of tactical “brilliant” moves with phase restrictions.
 
-## 🛠️ Tech Stack
+## Brilliant Move Budget
 
-### Core Technologies
-- **Electron 40.1.0**: Desktop application framework
-- **React 19.2.4**: UI library
-- **TypeScript 4.5.4**: Type-safe JavaScript
-- **MobX 6.15.0**: State management
-- **Vite 5.4.21**: Build tool and dev server
+When enabled, PersonaChess can reserve a fixed number of brilliant moves per game.
 
-### Chess Libraries
-- **chess.js 1.4.0**: Chess logic, move validation, FEN/PGN handling
-- **react-chessboard 5.8.6**: React chess board component
-- **stockfish.js 10.0.2**: Stockfish UCI engine (WASM) for position analysis
+- `brilliantMovesPerGame`: `0` to `4`
+- `brilliantAllowedPhase`: `opening`, `middlegame`, `endgame`, or `any`
+- Tactical preference is based on checks, captures, promotions, and similar sharp traits
+- Budget is consumed only after a brilliant move is actually played
+- Undo/redo and restored sessions keep brilliant tracking consistent
 
-### Development Tools
-- **Electron Forge**: Electron build and packaging
-- **ESLint**: Code linting
-- **@vitejs/plugin-react**: React support for Vite
+## Architecture
 
-## 📦 Installation
+PersonaChess follows MVVM:
 
-### Prerequisites
-- Node.js (v16 or higher)
-- npm or yarn
+- `src/engine`
+  Pure TypeScript logic for Stockfish integration, move classification, picking, caching, RNG, complexity, persona bias, brilliant selection, and supporting helpers
+- `src/viewmodels`
+  MobX stores coordinating board state, engine state, configuration, feature options, and debug state
+- `src/renderer`
+  React components that render the UI and call ViewModel actions
+- `src/main.ts`
+  Electron main process with production hardening and Forge/Vite bootstrapping
+- `src/preload.ts`
+  Minimal context-bridge surface for syncing feature options to the main process
 
-### Quick Start
+## Requirements
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd PersonaChess
-```
+- Node.js 18 or newer recommended
+- npm
+- macOS, Windows, or Linux for local Electron builds
 
-2. Install dependencies:
+## Setup
+
 ```bash
 npm install
 ```
 
-The `postinstall` script will automatically copy Stockfish WASM files to the `public/` directory.
+The `postinstall` step copies `stockfish.js` and `stockfish.wasm` into `public/`.
 
-3. Start the development server:
+## Run In Development
+
 ```bash
 npm start
 ```
 
-The application will launch in a new Electron window.
+Notes:
 
-### Building for Production
+- The app runs with Electron Forge + Vite
+- DevTools can be opened in development when the security option allows it
+- A debug logging toggle is available in the app during development
 
-To create a distributable package:
+## Tests And Lint
+
+```bash
+npm test
+npm run lint
+```
+
+## Production Packaging
+
+Package the app locally:
+
 ```bash
 npm run package
 ```
 
-To create platform-specific installers:
+Create a platform distributable:
+
 ```bash
 npm run make
 ```
 
-## 🖥️ User Interface
+Current packaging metadata:
 
-The application features a clean, modern dark-themed interface with three main sections:
+- App name: `PersonaChess`
+- Bundle identifier: `com.imokhles.personachess`
+- macOS category: `Games`
+- App icon: `assets/icon.icns`
 
-- **Left Panel**: Interactive chess board with move indicators and quality arrows
-- **Middle Panel**: Game controls (auto-play, undo/redo, FEN/PGN loading, board controls)
-- **Right Panel**: Move Quality Distribution sliders and Engine Settings
+## Release Notes
 
-The layout is optimized for horizontal viewing with all controls easily accessible.
+This release-readiness pass includes:
 
-## 🚀 Usage
+- DevTools restricted to development builds only
+- Hardened Electron window settings with `contextIsolation`, `sandbox`, `nodeIntegration: false`, blocked navigation, and denied permission prompts
+- Minimal preload bridge
+- Reduced runtime logging noise behind a debug toggle
+- Cache/source visibility and clearer analysis state in the UI
+- Persisted move annotations for stable brilliant undo/redo after restart
 
-### Basic Gameplay
+## Troubleshooting
 
-1. **Making Moves**: 
-   - Click a piece to see legal moves (highlighted circles)
-   - Click a highlighted square to move
-   - Or drag and drop pieces
+### The app opens but the engine never starts
 
-2. **Auto-Play Mode**:
-   - Enable "Auto-play Engine" toggle
-   - Select which side the engine plays for (White or Black)
-   - Make your moves, and the engine will automatically respond
+- Re-run `npm install` so `postinstall` recopies `stockfish.js` and `stockfish.wasm`
+- Confirm both files exist in `public/`
+- Check the in-app engine error message in the control panel
 
-3. **Manual Mode**:
-   - Disable "Auto-play Engine"
-   - Click "Solve Next Move" when you want the engine to analyze and play
+### Stockfish or WASM fails after packaging
 
-### Configuration
+- Verify `public/stockfish.js` and `public/stockfish.wasm` are included in the packaged app resources
+- Rebuild with `npm run package`
+- If you changed asset paths, make sure the worker still loads `/stockfish.js`
 
-**Move Quality Distribution**: Adjust the percentage sliders to control how often the engine plays different quality moves:
-- **Best**: Perfect moves (0 eval loss)
-- **Great**: Very good moves (0-10 centipawns loss)
-- **Excellent**: Good moves (10-30 centipawns loss)
-- **Good**: Decent moves (30-60 centipawns loss)
-- **Inaccuracy**: Suboptimal moves (60-100 centipawns loss)
-- **Mistake**: Poor moves (100-200 centipawns loss)
-- **Blunder**: Very poor moves (200+ centipawns loss)
+### Packaging fails on your platform
 
-**Engine Settings**:
-- **Depth**: Analysis depth (default: 20)
-- **MultiPV**: Number of candidate moves to analyze (default: 12)
+- `npm run package` is the easiest smoke check for a local release
+- `npm run make` depends on the maker available for your platform
+- On macOS, the default distributable is a `.zip`
+- Linux makers may require additional native packaging tools when run on Linux
 
-### Loading Positions
+### The engine feels noisy in the terminal
 
-- **Load FEN**: Click "Load FEN" and paste a FEN string to load a specific position
-- **Load PGN**: Click "Load PGN" and paste a PGN string to load an entire game
+- Use the in-app `Debug logs` toggle in development to turn verbose logs on or off
+- In packaged builds, debug logs stay off by default
 
-### Undo/Redo
+### Persisted state feels stale
 
-- **Undo**: Click the "↶ Undo" button to undo the last move
-- **Redo**: Click the "↷ Redo" button to redo the last undone move
-- The redo stack is cleared when you make a new move
+- Disable and re-enable `Persist Engine Configuration` to clear persisted advanced settings
+- Reset the board or load a new `FEN`/`PGN` to start a fresh game session
 
-### Board Controls
+## Scripts
 
-- **Flip Board**: Click the "🔄 Flip Board" button to flip the board orientation (view from Black's or White's perspective). The engine's playing color automatically flips to match your new perspective
-- **FEN History**: Current FEN is automatically saved to localStorage. Use the "Restore" button to reload the last saved position
-- **FEN Status**: Indicator shows whether the current position is saved and how many positions are in history (max 50)
+- `npm start`: run the Electron app in development
+- `npm run package`: build a local packaged app
+- `npm run make`: create a platform distributable
+- `npm test`: run the local regression tests
+- `npm run lint`: run ESLint
 
-### Move Analysis Features
+## Project Structure
 
-- **Player Move Quality**: After making a move, the quality of your move is automatically analyzed and displayed (e.g., "You played: Excellent move")
-- **Move Quality Arrows**: 
-  - Click "Show Move Arrows" to display arrows on the board showing move quality
-  - Arrows are colored by quality: Excellent (green), Good (gray), Mistake (red), Blunder (dark red)
-  - Shows maximum 3 arrows per quality type (up to 12 arrows total)
-  - Click "Analyze Moves" to manually trigger analysis of all legal moves
-  - Arrows automatically update when the position changes
-
-### Piece Interaction
-
-- **Capturing Engine Pieces**: When auto-play is enabled, you can click on your pieces and then click on engine pieces to capture them
-- **Engine Piece Selection**: Engine pieces cannot be selected to move them, but they can be captured by your pieces
-
-## 📁 Project Structure
-
-```
-PersonaChess/
-├── src/
-│   ├── engine/              # Model layer (pure TypeScript)
-│   │   ├── stockfish.service.ts
-│   │   ├── moveClassifier.ts
-│   │   ├── movePicker.ts
-│   │   ├── types.ts
-│   │   └── index.ts
-│   ├── viewmodels/          # ViewModel layer (MobX stores)
-│   │   ├── BoardViewModel.ts
-│   │   ├── EngineViewModel.ts
-│   │   ├── ConfigViewModel.ts
-│   │   └── index.ts
-│   ├── renderer/            # View layer (React components)
-│   │   ├── components/
-│   │   │   ├── ChessBoard.tsx
-│   │   │   ├── ChessBoard.css
-│   │   │   ├── ControlPanel.tsx
-│   │   │   ├── ControlPanel.css
-│   │   │   ├── ConfigPanel.tsx
-│   │   │   ├── ConfigPanel.css
-│   │   │   └── index.ts
-│   │   ├── styles/
-│   │   │   └── global.css
-│   │   ├── App.tsx
-│   │   ├── App.css
-│   │   └── index.tsx
-│   ├── main.ts              # Electron main process
-│   └── preload.ts           # Electron preload script
-├── public/                  # Static assets (Stockfish WASM files)
-│   ├── stockfish.js
-│   └── stockfish.wasm
-├── screenshots/             # Application screenshots
-│   └── screenshot1.png
-├── package.json
-├── tsconfig.json
-├── vite.renderer.config.ts
-├── vite.main.config.ts
-├── vite.preload.config.ts
-├── forge.config.ts
-├── .gitignore
-└── README.md
+```text
+src/
+  engine/
+  renderer/
+  viewmodels/
+  main.ts
+  preload.ts
+public/
+  stockfish.js
+  stockfish.wasm
+assets/
+  icon.svg
+  icon.icns
+tests/
 ```
 
-## 🔧 Development
-
-### Available Scripts
-
-- `npm start`: Start the Electron app in development mode
-- `npm run package`: Package the app for distribution
-- `npm run make`: Create distributables (installers)
-- `npm run lint`: Run ESLint
-
-
-## 🎨 Features
-
-### ✅ Implemented
-
-- [x] MVVM architecture with strict separation of concerns
-- [x] Stockfish WASM integration via Web Workers
-- [x] Move classification into quality buckets
-- [x] Weighted random move selection
-- [x] Interactive chess board (drag-and-drop and click-to-move)
-- [x] Visual move indicators (legal moves, selected squares)
-- [x] Auto-play mode with configurable engine side
-- [x] Manual play mode
-- [x] Single-move undo/redo
-- [x] FEN/PGN loading
-- [x] FEN history with localStorage persistence (auto-save, restore on startup)
-- [x] Board flip functionality (view from either side, automatically flips engine color)
-- [x] Player move quality analysis and display
-- [x] Move quality arrows visualization (Excellent, Good, Mistake, Blunder)
-- [x] Move arrows filtering (max 3 per quality type)
-- [x] Enhanced piece interaction (can capture engine pieces when auto-play enabled)
-- [x] Configurable move quality distributions
-- [x] Engine settings (depth, MultiPV)
-- [x] Game status display (check, checkmate, stalemate, draw)
-- [x] Move history tracking
-- [x] Responsive horizontal layout with side-by-side controls
-- [x] FEN status indicator (saved/unsaved, history count)
-- [x] Performance optimizations (debounced analysis, reduced logging)
-- [x] Automatic FEN persistence and restoration
-
-### 🚧 TODO / Future Enhancements
-
-#### High Priority (Core Features)
-- [ ] Export games to PGN format
-- [ ] Move notation display (SAN) in move history panel
-- [ ] Analysis panel showing engine evaluation and principal variation
-- [ ] Game replay functionality (step through move history)
-- [ ] Save/load game configurations (bucket settings, engine settings)
-
-#### Medium Priority (User Experience)
-- [ ] Keyboard shortcuts for common actions (undo, redo, flip board, etc.)
-- [ ] Move suggestions for human player (highlight best move)
-- [ ] Engine strength presets (beginner, intermediate, advanced) with predefined bucket configs
-- [ ] Custom themes (light mode, custom color schemes)
-- [ ] Statistics tracking (win/loss/draw, average move quality)
-- [ ] Position evaluation graph over time
-
-#### Low Priority (Advanced Features)
-- [ ] Multiple engine personalities (aggressive, defensive, etc.) via different bucket configurations
-- [ ] Time controls (game timer, move timer)
-- [ ] Opening book integration (suggest opening moves)
-- [ ] Show arrows for all move qualities (Best, Great, Inaccuracy) - currently limited to Excellent, Good, Mistake, Blunder
-- [ ] Configurable arrow colors per quality bucket (UI for customizing colors)
-- [ ] Arrow animation effects (fade in/out, pulse)
-- [ ] Export FEN history to file
-- [ ] Import FEN history from file
-
-#### Removed (Not Feasible or Redundant)
-- ~~Move history panel with notation~~ - Covered by "Move notation display (SAN) in move history"
-- ~~Filter move arrows by specific quality buckets~~ - Already implemented (shows Excellent, Good, Mistake, Blunder)
-- ~~Cloud sync for configurations~~ - Requires backend infrastructure, better suited for local storage
-- ~~Tournament mode~~ - Too complex for current scope, better as separate feature
-- ~~Multi-language support~~ - Low priority for MVP, can be added later if needed
-
-## 🐛 Known Issues
-
-- Stockfish analysis timeout is set to 30 seconds; very deep analysis may timeout
-- Move arrows analysis may take a few seconds for positions with many legal moves
-- FEN history is limited to 50 positions (oldest positions are automatically removed)
-- Move arrows only show up to 3 arrows per quality type (Excellent, Good, Mistake, Blunder)
-- Performance optimizations have been implemented to prevent rendering flickering
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-### Development Guidelines
-
-- Follow the MVVM architecture pattern strictly
-- Keep Model layer pure TypeScript (no React/MobX dependencies)
-- Use MobX observables/actions/computed in ViewModel layer
-- React components should be functional with `observer()` wrapper
-- Follow TypeScript best practices
-- Ensure code is properly typed
-
-## 📝 License
-
-MIT License - see LICENSE file for details
-
-## 👤 Author
-
-**iMokhles**
-- Email: mokhlashussein@aol.com
-
-## 🙏 Acknowledgments
-
-- **Stockfish**: Open-source chess engine
-- **chess.js**: JavaScript chess library
-- **react-chessboard**: React chess board component
-- **Electron**: Desktop application framework
-
-## 📚 Resources
-
-- [Stockfish Documentation](https://stockfishchess.org/)
-- [UCI Protocol](https://www.chessprogramming.org/UCI)
-- [chess.js Documentation](https://github.com/jhlywa/chess.js)
-- [MobX Documentation](https://mobx.js.org/)
-- [Electron Documentation](https://www.electronjs.org/)
-
----
-
-**Note**: This application is designed for educational purposes and chess analysis. The move quality classification system is a simplified model and may not perfectly reflect human playing patterns.

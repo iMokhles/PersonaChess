@@ -6,8 +6,7 @@
 
 import React, { useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
-import { configViewModel } from '../../viewmodels';
-import { engineViewModel } from '../../viewmodels';
+import { configViewModel, engineViewModel } from '../../viewmodels';
 import { MoveBucket, BUCKET_LABELS, BUCKET_COLORS, BUCKET_EVAL_RANGES, MOVE_QUALITY_PRESETS, MoveQualityPresetId } from '../../engine/types';
 import './ConfigPanel.css';
 
@@ -18,9 +17,10 @@ interface BucketSliderProps {
   value: number;
   onChange: (value: number) => void;
   moveCount: number;
+  disabled: boolean;
 }
 
-const BucketSlider: React.FC<BucketSliderProps> = ({ bucket, value, onChange, moveCount }) => {
+const BucketSlider: React.FC<BucketSliderProps> = ({ bucket, value, onChange, moveCount, disabled }) => {
   const [min, max] = BUCKET_EVAL_RANGES[bucket];
   const rangeText = max === Infinity ? `>${min}` : `${min}-${max}`;
   
@@ -49,6 +49,7 @@ const BucketSlider: React.FC<BucketSliderProps> = ({ bucket, value, onChange, mo
         max="100"
         value={value}
         onChange={(e) => onChange(parseInt(e.target.value, 10))}
+        disabled={disabled}
         className="slider"
         style={{
           '--slider-color': BUCKET_COLORS[bucket],
@@ -59,6 +60,8 @@ const BucketSlider: React.FC<BucketSliderProps> = ({ bucket, value, onChange, mo
 };
 
 export const ConfigPanel: React.FC = observer(() => {
+  const engineBusy = engineViewModel.isAnalyzing || engineViewModel.isInitializing;
+
   const handleBucketChange = useCallback((bucket: MoveBucket) => (value: number) => {
     configViewModel.setBucketValue(bucket, value);
   }, []);
@@ -96,6 +99,7 @@ export const ConfigPanel: React.FC = observer(() => {
               type="button"
               className={`preset-btn ${currentPresetId === preset.id ? 'active' : ''}`}
               onClick={() => handlePresetSelect(preset.id)}
+              disabled={engineBusy}
               title={preset.description}
             >
               {preset.label}
@@ -120,6 +124,7 @@ export const ConfigPanel: React.FC = observer(() => {
             value={configViewModel.bucketConfig[bucket]}
             onChange={handleBucketChange(bucket)}
             moveCount={moveStats[bucket]}
+            disabled={engineBusy}
           />
         ))}
       </div>
@@ -138,13 +143,14 @@ export const ConfigPanel: React.FC = observer(() => {
         <button 
           className="btn btn-secondary"
           onClick={handleNormalize}
-          disabled={isValid}
+          disabled={isValid || engineBusy}
         >
           Normalize to 100%
         </button>
         <button 
           className="btn btn-secondary"
           onClick={handleReset}
+          disabled={engineBusy}
         >
           Reset Defaults
         </button>
@@ -162,6 +168,7 @@ export const ConfigPanel: React.FC = observer(() => {
               max="30"
               value={configViewModel.depth}
               onChange={(e) => configViewModel.setDepth(parseInt(e.target.value, 10))}
+              disabled={engineBusy}
             />
           </div>
         </div>
@@ -175,6 +182,7 @@ export const ConfigPanel: React.FC = observer(() => {
               max="20"
               value={configViewModel.multiPV}
               onChange={(e) => configViewModel.setMultiPV(parseInt(e.target.value, 10))}
+              disabled={engineBusy}
             />
           </div>
         </div>

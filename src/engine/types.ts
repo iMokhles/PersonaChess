@@ -21,6 +21,8 @@ export type MoveBucket =
   | 'mistake'
   | 'blunder';
 
+export type DisplayMoveBucket = MoveBucket | 'fallback';
+
 export interface ClassifiedMove extends AnalyzedMove {
   bucket: MoveBucket;
 }
@@ -46,6 +48,7 @@ export interface StockfishInfo {
 export interface PickedMoveResult {
   move: ClassifiedMove;
   bucket: MoveBucket;
+  isBrilliant?: boolean;
 }
 
 export const DEFAULT_BUCKET_CONFIG: BucketConfig = {
@@ -162,6 +165,11 @@ export const BUCKET_LABELS: Record<MoveBucket, string> = {
   blunder: 'Blunder',
 };
 
+export const DISPLAY_BUCKET_LABELS: Record<DisplayMoveBucket, string> = {
+  ...BUCKET_LABELS,
+  fallback: 'Fallback move',
+};
+
 export const BUCKET_COLORS: Record<MoveBucket, string> = {
   best: '#26a641',
   great: '#2ea043',
@@ -170,4 +178,9 @@ export const BUCKET_COLORS: Record<MoveBucket, string> = {
   inaccuracy: '#d29922',
   mistake: '#f85149',
   blunder: '#da3633',
+};
+
+export const DISPLAY_BUCKET_COLORS: Record<DisplayMoveBucket, string> = {
+  ...BUCKET_COLORS,
+  fallback: '#6e7681',
 };

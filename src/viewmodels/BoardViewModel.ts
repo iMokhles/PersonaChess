@@ -3,41 +3,58 @@
  * ViewModel layer - MobX store for chess board state
  */
 
-import { makeAutoObservable, action, runInAction } from 'mobx';
+import { makeAutoObservable, action, reaction, runInAction } from 'mobx';
 import { Chess, Move, Square } from 'chess.js';
+import { canApplyAnalyzedMove } from '../engine/analysisSafety';
+import { deriveBrilliantUsage, MoveAnnotation } from '../engine/brilliantTracking';
+import { PersistedBoardState, createGameSessionId, resolvePgnStartFen } from '../engine/gameSession';
 import { engineViewModel } from './EngineViewModel';
 import { configViewModel } from './ConfigViewModel';
-import { PickedMoveResult, MoveBucket, BUCKET_LABELS, BUCKET_COLORS } from '../engine/types';
+import { featureOptionsViewModel } from './FeatureOptionsViewModel';
+import { createDebugLogger } from '../shared/debug';
+import {
+  PickedMoveResult,
+  MoveBucket,
+  DisplayMoveBucket,
+  DISPLAY_BUCKET_LABELS,
+  BUCKET_LABELS,
+  BUCKET_COLORS,
+  DISPLAY_BUCKET_COLORS,
+} from '../engine/types';
+import { calculateHumanDelayMs } from '../engine/personaBias';
+import { mapLegalMovesToBuckets } from '../engine/moveClassifier';
 
-// Set to true for debugging, false for production
-const DEBUG = false;
-
-const log = (...args: any[]) => {
-  if (DEBUG) console.log(...args);
-};
+const logger = createDebugLogger('BoardViewModel');
 
 export class BoardViewModel {
   private chess: Chess = new Chess();
-  fen: string = this.chess.fen();
+  fen = this.chess.fen();
+  gameStartFen = this.chess.fen();
+  gameSessionId = createGameSessionId();
   history: Move[] = [];
   lastMove: { from: Square; to: Square } | null = null;
   lastPlayedBucket: MoveBucket | null = null;
-  statusMessage: string = 'Ready';
-  isThinking: boolean = false;
-  autoPlayEnabled: boolean = true; // Auto-play engine moves after human moves
+  statusMessage = 'Ready';
+  lastSkippedEngineMoveMessage: string | null = null;
+  isThinking = false;
+  autoPlayEnabled = true; // Auto-play engine moves after human moves
   enginePlaysFor: 'w' | 'b' = 'b'; // Which side the engine plays for (default: black)
-  boardFlipped: boolean = false; // Board orientation (false = white on bottom, true = black on bottom)
-  showMoveArrows: boolean = false; // Show arrows for all possible moves
+  boardFlipped = false; // Board orientation (false = white on bottom, true = black on bottom)
+  showMoveArrows = false; // Show arrows for all possible moves
   showArrowsForSide: 'current' | 'player' | 'engine' = 'current'; // Which side's moves to show arrows for
-  lastPlayerMoveQuality: MoveBucket | null = null; // Quality of the last player move
-  isAnalyzingMoves: boolean = false; // Whether we're currently analyzing moves
+  lastPlayerMoveQuality: DisplayMoveBucket | null = null; // Quality of the last player move
+  isAnalyzingMoves = false; // Whether we're currently analyzing moves
   
   // Store analyzed moves as an object for MobX observability
-  private _analyzedLegalMoves: Record<string, MoveBucket> = {};
+  private _analyzedLegalMoves: Record<string, DisplayMoveBucket> = {};
   private redoStack: Move[] = []; // Stack of moves that were undone for redo functionality
+  private historyAnnotations: MoveAnnotation[] = [];
+  private redoAnnotations: MoveAnnotation[] = [];
+  private analyzedLegalMovesFen: string | null = null;
   private _analysisTimeout: NodeJS.Timeout | null = null; // Timeout for debouncing move analysis
   private readonly FEN_STORAGE_KEY = 'personachess_current_fen';
   private readonly FEN_HISTORY_KEY = 'personachess_fen_history';
+  private readonly BOARD_STATE_STORAGE_KEY = 'personachess_board_state';
   private readonly MAX_HISTORY = 50; // Maximum number of FEN positions to store
 
   constructor() {
@@ -63,8 +80,21 @@ export class BoardViewModel {
     
     // Try to restore FEN from localStorage on initialization
     this.restoreFenFromStorage();
+
+    reaction(
+      () => featureOptionsViewModel.persistEngineConfig,
+      (persistEngineConfig) => {
+        if (!persistEngineConfig) {
+          this.clearPersistedBoardState();
+          return;
+        }
+
+        this.saveFenToHistory();
+      },
+      { fireImmediately: true },
+    );
     
-    log('[BoardViewModel] Initialized with FEN:', this.fen);
+    logger.debug('Initialized with FEN:', this.fen);
   }
 
   /**
@@ -72,7 +102,7 @@ export class BoardViewModel {
    */
   setAutoPlay(enabled: boolean): void {
     this.autoPlayEnabled = enabled;
-    log('[BoardViewModel] Auto-play set to:', enabled);
+    logger.debug('Auto-play set to:', enabled);
   }
 
   /**
@@ -80,25 +110,48 @@ export class BoardViewModel {
    */
   setEnginePlaysFor(side: 'w' | 'b'): void {
     this.enginePlaysFor = side;
-    log('[BoardViewModel] Engine plays for:', side === 'w' ? 'White' : 'Black');
+    logger.debug('Engine plays for:', side === 'w' ? 'White' : 'Black');
   }
 
   /**
    * Load a position from FEN string
    */
-  loadFen(fen: string): boolean {
+  loadFen(
+    fen: string,
+    options: {
+      resetBrilliantTracking?: boolean;
+      sessionId?: string;
+      gameStartFen?: string;
+      historyAnnotations?: MoveAnnotation[];
+      redoAnnotations?: MoveAnnotation[];
+    } = {},
+  ): boolean {
     try {
-      log('[BoardViewModel] loadFen called:', fen);
+      const {
+        resetBrilliantTracking = true,
+        sessionId,
+        gameStartFen,
+        historyAnnotations,
+        redoAnnotations,
+      } = options;
+      logger.debug('loadFen called:', fen);
       const newChess = new Chess(fen);
       this.chess = newChess;
-      this.redoStack = []; // Clear redo stack
+      this.beginSessionState({
+        gameSessionId: sessionId ?? createGameSessionId(),
+        gameStartFen: gameStartFen ?? fen,
+        resetBrilliantTracking,
+        historyAnnotations,
+        redoAnnotations,
+      });
       this.updateState();
       this.statusMessage = 'Position loaded';
+      this.lastSkippedEngineMoveMessage = null;
       engineViewModel.reset();
-      log('[BoardViewModel] FEN loaded successfully');
+      logger.debug('FEN loaded successfully');
       return true;
     } catch (err) {
-      console.error('[BoardViewModel] loadFen error:', err);
+      logger.error('loadFen error:', err);
       this.statusMessage = `Invalid FEN: ${err}`;
       return false;
     }
@@ -107,19 +160,29 @@ export class BoardViewModel {
   /**
    * Load a game from PGN string
    */
-  loadPgn(pgn: string): boolean {
+  loadPgn(
+    pgn: string,
+    options: { resetBrilliantTracking?: boolean; sessionId?: string } = {},
+  ): boolean {
     try {
-      log('[BoardViewModel] loadPgn called');
+      const { resetBrilliantTracking = true, sessionId } = options;
+      logger.debug('loadPgn called');
       const newChess = new Chess();
       newChess.loadPgn(pgn);
+      const gameStartFen = resolvePgnStartFen(newChess.header(), new Chess().fen());
       this.chess = newChess;
-      this.redoStack = []; // Clear redo stack
+      this.beginSessionState({
+        gameSessionId: sessionId ?? createGameSessionId(),
+        gameStartFen,
+        resetBrilliantTracking,
+      });
       this.updateState();
       this.statusMessage = 'PGN loaded';
+      this.lastSkippedEngineMoveMessage = null;
       engineViewModel.reset();
       return true;
     } catch (err) {
-      console.error('[BoardViewModel] loadPgn error:', err);
+      logger.error('loadPgn error:', err);
       this.statusMessage = `Invalid PGN: ${err}`;
       return false;
     }
@@ -129,8 +192,8 @@ export class BoardViewModel {
    * Make a move on the board (similar to the example pattern)
    * This is synchronous for immediate UI feedback, just like the example
    */
-  makeMove(from: Square, to: Square, promotion: string = 'q'): boolean {
-    log('[BoardViewModel] makeMove called', { from, to, promotion, currentFen: this.fen, currentTurn: this.chess.turn() });
+  makeMove(from: Square, to: Square, promotion = 'q'): boolean {
+    logger.debug('makeMove called', { from, to, promotion, currentFen: this.fen, currentTurn: this.chess.turn() });
     
     try {
       // Try to make the move according to chess.js logic (exactly like the example)
@@ -142,15 +205,17 @@ export class BoardViewModel {
       });
 
       if (move) {
-        log('[BoardViewModel] Move successful:', move.san);
+        logger.debug('Move successful:', move.san);
         // Clear redo stack when a new move is made
-        this.redoStack = [];
+        this.clearRedoState();
+        this.recordMoveAnnotation(move, false);
         // Update the position state to trigger a re-render (via MobX observable)
         this.updateState();
         this.lastMove = { from, to };
         this.lastPlayedBucket = null;
         this.statusMessage = `You played: ${move.san}`;
         engineViewModel.reset();
+        this.lastSkippedEngineMoveMessage = null;
         
         // Analyze the player's move quality
         this.analyzePlayerMove(move);
@@ -160,10 +225,10 @@ export class BoardViewModel {
         // 2. Game is not over
         // 3. It's now the engine's turn (the turn changed after the human move)
         if (this.autoPlayEnabled && !this.isGameOver && this.chess.turn() === this.enginePlaysFor) {
-          log('[BoardViewModel] Scheduling auto-play for engine side:', this.enginePlaysFor);
+          logger.debug('Scheduling auto-play for engine side:', this.enginePlaysFor);
           setTimeout(() => {
-            this.solveNextMove().catch(err => {
-              console.error('[BoardViewModel] Auto-play error:', err);
+            this.solveNextMove(true).catch(err => {
+              logger.error('Auto-play error:', err);
             });
           }, 500); // Similar delay to the example
         }
@@ -171,12 +236,12 @@ export class BoardViewModel {
         // Return true as the move was successful
         return true;
       } else {
-        log('[BoardViewModel] Move failed - chess.js returned null');
+        logger.debug('Move failed - chess.js returned null');
         // Return false as the move was not successful
         return false;
       }
     } catch (err) {
-      log('[BoardViewModel] Move exception:', err);
+      logger.debug('Move exception:', err);
       // Return false as the move was not successful
       return false;
     }
@@ -186,7 +251,10 @@ export class BoardViewModel {
    * Make a move from UCI notation (e.g., "e2e4")
    * Used by the engine
    */
-  async makeMoveUCI(uci: string): Promise<boolean> {
+  async makeMoveUCI(
+    uci: string,
+    options: { consumedBrilliant?: boolean } = {},
+  ): Promise<boolean> {
     if (uci.length < 4) return false;
     
     const from = uci.slice(0, 2) as Square;
@@ -202,7 +270,8 @@ export class BoardViewModel {
 
       if (move) {
         // Clear redo stack when a new move is made
-        this.redoStack = [];
+        this.clearRedoState();
+        this.recordMoveAnnotation(move, options.consumedBrilliant ?? false);
         this.updateState();
         this.lastMove = { from, to };
         this.lastPlayedBucket = null;
@@ -219,7 +288,7 @@ export class BoardViewModel {
   /**
    * Solve and play the next move using the engine and bucket configuration
    */
-  async solveNextMove(): Promise<PickedMoveResult | null> {
+  async solveNextMove(autoTriggered = false): Promise<PickedMoveResult | null> {
     if (this.isGameOver) {
       this.statusMessage = 'Game is over';
       return null;
@@ -237,16 +306,19 @@ export class BoardViewModel {
       }
 
       // Analyze current position
-      const analyzedMoves = await engineViewModel.analyzePosition(
+      const analysis = await engineViewModel.analyzePosition(
         this.fen,
         configViewModel.depth,
-        configViewModel.multiPV
+        configViewModel.multiPV,
+        'engineMove',
       );
 
       // Check if analysis returned no moves (game over position)
-      if (analyzedMoves.length === 0) {
+      if (analysis.ignored || analysis.moves.length === 0) {
         runInAction(() => {
-          if (this.isCheckmate) {
+          if (analysis.ignored) {
+            this.statusMessage = 'Engine analysis expired';
+          } else if (this.isCheckmate) {
             this.statusMessage = 'Checkmate! Game over.';
           } else if (this.isStalemate) {
             this.statusMessage = 'Stalemate! Game over.';
@@ -255,22 +327,53 @@ export class BoardViewModel {
           } else {
             this.statusMessage = 'No legal moves available';
           }
+          this.lastSkippedEngineMoveMessage = analysis.ignored ? 'A newer engine analysis replaced this move request.' : null;
           this.isThinking = false;
         });
         return null;
       }
 
       // Pick a move based on bucket configuration
-      const result = engineViewModel.pickMoveFromBuckets(configViewModel.bucketConfig);
+      const persona = configViewModel.currentPresetId ?? 'custom';
+      const result = engineViewModel.pickMoveFromAnalysis(analysis, configViewModel.bucketConfig, {
+        fen: this.fen,
+        gameStartFen: this.gameStartFen,
+        moveCount: this.moveCount,
+        sideToMove: this.turn,
+        persona,
+      });
 
       if (result) {
+        if (autoTriggered && featureOptionsViewModel.useHumanDelaySimulation) {
+          const delayMs = calculateHumanDelayMs({
+            complexity: analysis.complexity,
+            persona,
+            bucket: result.bucket,
+          });
+          await this.wait(delayMs);
+        }
+
+        if (!canApplyAnalyzedMove(this.fen, analysis.analyzedFen)) {
+          runInAction(() => {
+            this.statusMessage = 'Position changed, stale engine move discarded';
+            this.lastSkippedEngineMoveMessage = 'Skipped engine move because the board changed before it could be played.';
+            this.isThinking = false;
+          });
+          return null;
+        }
+
         // Apply the picked move
-        const moveSuccess = await this.makeMoveUCI(result.move.move);
+        const moveSuccess = await this.makeMoveUCI(result.move.move, {
+          consumedBrilliant: result.isBrilliant ?? false,
+        });
         
         if (moveSuccess) {
           runInAction(() => {
             this.lastPlayedBucket = result.bucket;
-            this.statusMessage = `Engine played: ${BUCKET_LABELS[result.bucket]} move`;
+            this.statusMessage = result.isBrilliant
+              ? 'Engine played: Brilliant move'
+              : `Engine played: ${BUCKET_LABELS[result.bucket]} move`;
+            this.lastSkippedEngineMoveMessage = null;
             this.isThinking = false;
           });
         } else {
@@ -289,7 +392,7 @@ export class BoardViewModel {
         return null;
       }
     } catch (err) {
-      console.error('[BoardViewModel] solveNextMove error:', err);
+      logger.error('solveNextMove error:', err);
       runInAction(() => {
         this.statusMessage = `Error: ${err}`;
         this.isThinking = false;
@@ -302,22 +405,27 @@ export class BoardViewModel {
    * Reset the board to starting position
    */
   reset(): void {
-    log('[BoardViewModel] reset called');
+    logger.debug('reset called');
     this.chess = new Chess();
-    this.redoStack = []; // Clear redo stack
+    this.beginSessionState({
+      gameSessionId: createGameSessionId(),
+      gameStartFen: this.chess.fen(),
+      resetBrilliantTracking: true,
+    });
     this.updateState();
     this.lastMove = null;
     this.lastPlayedBucket = null;
     this.statusMessage = 'Board reset';
+    this.lastSkippedEngineMoveMessage = null;
     engineViewModel.reset();
-    log('[BoardViewModel] Board reset, new FEN:', this.fen);
+    logger.debug('Board reset, new FEN:', this.fen);
   }
 
   /**
    * Undo the last move (or last two moves if auto-play is on and engine just moved)
    */
   undo(): boolean {
-    log('[BoardViewModel] undo called, history length:', this.history.length);
+    logger.debug('undo called, history length:', this.history.length);
     
     // If auto-play is enabled and the last move was by the engine, undo both moves
     if (this.autoPlayEnabled && this.history.length >= 2) {
@@ -327,46 +435,41 @@ export class BoardViewModel {
       
       // If last move was by engine, undo both (engine move + human move)
       if (lastMoveColor === this.enginePlaysFor) {
-        const move1 = this.chess.undo();
-        const move2 = this.chess.undo();
-        
-        if (move1 && move2) {
+        if (this.undoMoves(2)) {
           this.updateState();
           this.lastMove = null;
           this.lastPlayedBucket = null;
           this.statusMessage = 'Undid last 2 moves (human + engine)';
           engineViewModel.reset();
-          log('[BoardViewModel] Undid 2 moves');
+          logger.debug('Undid 2 moves');
           return true;
         }
       } else {
         // Last move was by human, just undo one
-        const move = this.chess.undo();
-        if (move) {
+        if (this.undoMoves(1)) {
           this.updateState();
           this.lastMove = null;
           this.lastPlayedBucket = null;
           this.statusMessage = 'Move undone';
           engineViewModel.reset();
-          log('[BoardViewModel] Undid 1 move');
+          logger.debug('Undid 1 move');
           return true;
         }
       }
     } else {
       // Auto-play disabled or not enough moves, undo just one move
-      const move = this.chess.undo();
-      if (move) {
+      if (this.undoMoves(1)) {
         this.updateState();
         this.lastMove = null;
         this.lastPlayedBucket = null;
         this.statusMessage = 'Move undone';
         engineViewModel.reset();
-        log('[BoardViewModel] Undid 1 move');
+        logger.debug('Undid 1 move');
         return true;
       }
     }
     
-    log('[BoardViewModel] Undo failed - no moves to undo');
+    logger.debug('Undo failed - no moves to undo');
     return false;
   }
 
@@ -376,9 +479,10 @@ export class BoardViewModel {
   private updateState(): void {
     this.fen = this.chess.fen();
     this.history = this.chess.history({ verbose: true });
+    this.analyzedLegalMovesFen = null;
     // Save FEN to localStorage whenever it changes
     this.saveFenToHistory();
-    log('[BoardViewModel] updateState - FEN:', this.fen, 'History length:', this.history.length);
+    logger.debug('updateState - FEN:', this.fen, 'History length:', this.history.length);
     
     // Automatically re-analyze moves if arrows are enabled (debounced to prevent excessive calls)
     if (this.showMoveArrows && !this.isGameOver && !this.isAnalyzingMoves) {
@@ -392,13 +496,11 @@ export class BoardViewModel {
       // Debounce analysis to prevent excessive calls
       this._analysisTimeout = setTimeout(() => {
         this.analyzeAllMoves().catch(err => {
-          console.error('[BoardViewModel] Failed to analyze moves:', err);
+          logger.error('Failed to analyze moves:', err);
         });
       }, 300); // 300ms debounce
     }
   }
-
-  private _analysisTimeout: NodeJS.Timeout | null = null;
 
   /**
    * Flip the board orientation and engine playing color
@@ -407,7 +509,7 @@ export class BoardViewModel {
     this.boardFlipped = !this.boardFlipped;
     // Flip the engine's playing color when board is flipped
     this.enginePlaysFor = this.enginePlaysFor === 'w' ? 'b' : 'w';
-    log('[BoardViewModel] Board flipped, orientation:', this.boardFlipped ? 'black' : 'white', 'Engine now plays for:', this.enginePlaysFor === 'w' ? 'White' : 'Black');
+    logger.debug('Board flipped, orientation:', this.boardFlipped ? 'black' : 'white', 'Engine now plays for:', this.enginePlaysFor === 'w' ? 'White' : 'Black');
   }
 
   /**
@@ -424,25 +526,33 @@ export class BoardViewModel {
       const historyJson = localStorage.getItem(this.FEN_HISTORY_KEY);
       let history: string[] = historyJson ? JSON.parse(historyJson) : [];
       
-      // Remove duplicate if it's the same as the last one
-      if (history.length > 0 && history[history.length - 1] === currentFen) {
-        return; // Don't add duplicate consecutive FENs
+      if (history.length === 0 || history[history.length - 1] !== currentFen) {
+        history.push(currentFen);
+
+        if (history.length > this.MAX_HISTORY) {
+          history = history.slice(-this.MAX_HISTORY);
+        }
+
+        localStorage.setItem(this.FEN_HISTORY_KEY, JSON.stringify(history));
+      }
+
+      if (featureOptionsViewModel.persistEngineConfig) {
+        const boardState: PersistedBoardState = {
+          currentFen,
+          fenHistory: history,
+          gameSessionId: this.gameSessionId,
+          gameStartFen: this.gameStartFen,
+          historyAnnotations: this.historyAnnotations,
+          redoAnnotations: this.redoAnnotations,
+        };
+        localStorage.setItem(this.BOARD_STATE_STORAGE_KEY, JSON.stringify(boardState));
+      } else {
+        this.clearPersistedBoardState();
       }
       
-      // Add current FEN to history
-      history.push(currentFen);
-      
-      // Limit history size
-      if (history.length > this.MAX_HISTORY) {
-        history = history.slice(-this.MAX_HISTORY);
-      }
-      
-      // Save back to localStorage
-      localStorage.setItem(this.FEN_HISTORY_KEY, JSON.stringify(history));
-      
-      log('[BoardViewModel] Saved FEN to history, total entries:', history.length);
+      logger.debug('Saved FEN to history, total entries:', history.length);
     } catch (err) {
-      console.error('[BoardViewModel] Failed to save FEN to history:', err);
+      logger.error('Failed to save FEN to history:', err);
     }
   }
 
@@ -458,16 +568,33 @@ export class BoardViewModel {
         try {
           testChess.load(savedFen);
           // FEN is valid, load it
-          this.loadFen(savedFen);
+          const restoredBoardState = this.readPersistedBoardState();
+          if (restoredBoardState?.currentFen === savedFen) {
+            this.loadFen(savedFen, {
+              resetBrilliantTracking: false,
+              sessionId: restoredBoardState.gameSessionId,
+              gameStartFen: restoredBoardState.gameStartFen,
+              historyAnnotations: restoredBoardState.historyAnnotations,
+              redoAnnotations: restoredBoardState.redoAnnotations,
+            });
+          } else {
+            this.loadFen(savedFen, {
+              resetBrilliantTracking: false,
+            });
+          }
+
+          if (featureOptionsViewModel.brilliantGameSessionId !== this.gameSessionId) {
+            featureOptionsViewModel.resetBrilliantTracking(this.gameSessionId);
+          }
           this.statusMessage = 'Restored position from previous session';
-          log('[BoardViewModel] Restored FEN from storage:', savedFen);
+          logger.debug('Restored FEN from storage:', savedFen);
         } catch (err) {
-          console.warn('[BoardViewModel] Saved FEN is invalid, using default:', err);
+          logger.warn('Saved FEN is invalid, using default:', err);
           localStorage.removeItem(this.FEN_STORAGE_KEY);
         }
       }
     } catch (err) {
-      console.error('[BoardViewModel] Failed to restore FEN from storage:', err);
+      logger.error('Failed to restore FEN from storage:', err);
     }
   }
 
@@ -485,7 +612,7 @@ export class BoardViewModel {
       const fen = history[index];
       return this.loadFen(fen);
     } catch (err) {
-      console.error('[BoardViewModel] Failed to load FEN from history:', err);
+      logger.error('Failed to load FEN from history:', err);
       return false;
     }
   }
@@ -532,6 +659,7 @@ export class BoardViewModel {
     } else if (!this.showMoveArrows) {
       // Clear analysis when arrows are disabled to free memory
       this._analyzedLegalMoves = {};
+      this.analyzedLegalMovesFen = null;
     }
   }
 
@@ -540,10 +668,11 @@ export class BoardViewModel {
    */
   setShowArrowsForSide(side: 'current' | 'player' | 'engine'): void {
     this.showArrowsForSide = side;
-    log('[BoardViewModel] Show arrows for side:', side);
+    logger.debug('Show arrows for side:', side);
     // Re-analyze if arrows are enabled
     if (this.showMoveArrows) {
       this._analyzedLegalMoves = {};
+      this.analyzedLegalMovesFen = null;
       this.analyzeAllMoves();
     }
   }
@@ -553,6 +682,10 @@ export class BoardViewModel {
    */
   async analyzeAllMoves(): Promise<void> {
     if (this.isGameOver || this.isAnalyzingMoves) {
+      return;
+    }
+
+    if (this.analyzedLegalMovesFen === this.fen && Object.keys(this._analyzedLegalMoves).length > 0) {
       return;
     }
 
@@ -577,35 +710,36 @@ export class BoardViewModel {
       }
 
       // Analyze current position
-      const analyzedMoves = await engineViewModel.analyzePosition(
+      const analysis = await engineViewModel.analyzePosition(
         this.fen,
         configViewModel.depth,
-        configViewModel.multiPV
+        configViewModel.multiPV,
+        'background',
       );
 
-      // Create a map of UCI moves to their quality buckets
-      const moveMap: Record<string, MoveBucket> = {};
-      for (const analyzedMove of analyzedMoves) {
-        moveMap[analyzedMove.move] = analyzedMove.bucket;
+      if (analysis.ignored || !canApplyAnalyzedMove(this.fen, analysis.analyzedFen)) {
+        runInAction(() => {
+          this.isAnalyzingMoves = false;
+        });
+        return;
       }
 
-      // For moves that weren't analyzed (not in top MultiPV), classify as lower quality
-      for (const move of legalMoves) {
-        const uci = `${move.from}${move.to}${move.promotion || ''}`;
-        if (!moveMap[uci]) {
-          // Not in top moves, assume it's at least "good" or worse
-          moveMap[uci] = 'good';
-        }
-      }
+      // Create a map of UCI moves to their quality buckets
+      const moveMap = mapLegalMovesToBuckets(
+        legalMoves.map(move => `${move.from}${move.to}${move.promotion || ''}`),
+        analysis.moves,
+        featureOptionsViewModel.useImprovedMoveClassification,
+      );
 
       runInAction(() => {
         this._analyzedLegalMoves = moveMap;
         this.isAnalyzingMoves = false;
       });
 
-      log('[BoardViewModel] Analyzed', Object.keys(moveMap).length, 'legal moves');
+      this.analyzedLegalMovesFen = this.fen;
+      logger.debug('Analyzed', Object.keys(moveMap).length, 'legal moves');
     } catch (err) {
-      console.error('[BoardViewModel] Failed to analyze moves:', err);
+      logger.error('Failed to analyze moves:', err);
       runInAction(() => {
         this.isAnalyzingMoves = false;
       });
@@ -620,6 +754,7 @@ export class BoardViewModel {
     // Run asynchronously so it doesn't block the UI
     setTimeout(async () => {
       try {
+        const expectedAfterFen = move.after;
         // Initialize engine if needed
         if (!engineViewModel.isInitialized) {
           await engineViewModel.initialize();
@@ -634,35 +769,48 @@ export class BoardViewModel {
         // The move we just made is the last one in history
         // We need to analyze the position before it
         // chess.js history verbose includes 'before' and 'after' FEN
-        const lastMoveInHistory = history[history.length - 1];
-        const beforeFen = (lastMoveInHistory as any).before || this.fen;
+        const lastMoveInHistory = history[history.length - 1] as Move & { before?: string };
+        const beforeFen = lastMoveInHistory.before || this.fen;
 
         // Analyze the position before the move
-        const analyzedMoves = await engineViewModel.analyzePosition(
+        const analysis = await engineViewModel.analyzePosition(
           beforeFen,
           Math.min(configViewModel.depth, 15), // Use smaller depth for faster analysis
-          configViewModel.multiPV
+          configViewModel.multiPV,
+          'background',
         );
+
+        if (
+          analysis.ignored
+          || !canApplyAnalyzedMove(beforeFen, analysis.analyzedFen)
+          || this.fen !== expectedAfterFen
+        ) {
+          return;
+        }
 
         // Find the move in the analyzed moves
         const moveUCI = `${move.from}${move.to}${move.promotion || ''}`;
-        const analyzedMove = analyzedMoves.find(m => m.move === moveUCI);
+        const analyzedMove = analysis.moves.find(m => m.move === moveUCI);
         if (analyzedMove) {
           runInAction(() => {
             this.lastPlayerMoveQuality = analyzedMove.bucket;
             const qualityLabel = BUCKET_LABELS[analyzedMove.bucket];
             this.statusMessage = `You played: ${move.san} (${qualityLabel})`;
           });
-          log('[BoardViewModel] Player move quality:', analyzedMove.bucket);
+          logger.debug('Player move quality:', analyzedMove.bucket);
         } else {
-          // Move not in top moves, assume it's at least "good" or worse
           runInAction(() => {
-            this.lastPlayerMoveQuality = 'good';
-            this.statusMessage = `You played: ${move.san} (Good)`;
+            if (featureOptionsViewModel.useImprovedMoveClassification) {
+              this.lastPlayerMoveQuality = 'fallback';
+              this.statusMessage = `You played: ${move.san} (Fallback move)`;
+            } else {
+              this.lastPlayerMoveQuality = 'good';
+              this.statusMessage = `You played: ${move.san} (Good)`;
+            }
           });
         }
       } catch (err) {
-        console.error('[BoardViewModel] Failed to analyze player move:', err);
+        logger.error('Failed to analyze player move:', err);
         // Don't update status on error, keep the original message
       }
     }, 100);
@@ -703,7 +851,7 @@ export class BoardViewModel {
     // If 'current', show all legal moves (already filtered by chess.js to current turn)
 
     // Helper function to validate square format (a-h, 1-8)
-    const isValidSquare = (square: any): square is Square => {
+    const isValidSquare = (square: unknown): square is Square => {
       if (!square || typeof square !== 'string') return false;
       return /^[a-h][1-8]$/.test(square);
     };
@@ -723,7 +871,7 @@ export class BoardViewModel {
     for (const move of legalMoves) {
       // Validate that move has valid from and to squares
       if (!isValidSquare(move.from) || !isValidSquare(move.to)) {
-        log('[BoardViewModel] Skipping invalid move:', move);
+        logger.debug('Skipping invalid move:', move);
         continue;
       }
 
@@ -731,7 +879,7 @@ export class BoardViewModel {
       const bucket = this._analyzedLegalMoves[uci];
       
       // Only include moves from allowed buckets
-      if (bucket && allowedBuckets.includes(bucket) && isValidSquare(move.from) && isValidSquare(move.to)) {
+      if (bucket && bucket !== 'fallback' && allowedBuckets.includes(bucket) && isValidSquare(move.from) && isValidSquare(move.to)) {
         movesByBucket[bucket].push({
           startSquare: move.from,
           endSquare: move.to,
@@ -745,10 +893,10 @@ export class BoardViewModel {
     for (const bucket of allowedBuckets) {
       const bucketArrows = movesByBucket[bucket].slice(0, maxArrowsPerBucket);
       arrows.push(...bucketArrows);
-      log(`[BoardViewModel] Added ${bucketArrows.length} ${bucket} arrows (found ${movesByBucket[bucket].length} total)`);
+      logger.debug(`Added ${bucketArrows.length} ${bucket} arrows (found ${movesByBucket[bucket].length} total)`);
     }
 
-    log('[BoardViewModel] Generated', arrows.length, 'total arrows');
+    logger.debug('Generated', arrows.length, 'total arrows');
     return arrows;
   }
 
@@ -859,7 +1007,7 @@ export class BoardViewModel {
    * Undo a single move (for the new undo button)
    */
   undoSingle(): boolean {
-    log('[BoardViewModel] undoSingle called, history length:', this.history.length);
+    logger.debug('undoSingle called, history length:', this.history.length);
     
     if (this.history.length === 0) {
       return false;
@@ -869,6 +1017,11 @@ export class BoardViewModel {
     if (move) {
       // Add to redo stack
       this.redoStack.push(move);
+      const annotation = this.historyAnnotations.pop();
+      if (annotation) {
+        this.redoAnnotations.push(annotation);
+      }
+      this.syncBrilliantTrackingFromAnnotations();
       this.updateState();
       
       // Update lastMove if there are still moves in history
@@ -882,7 +1035,7 @@ export class BoardViewModel {
       this.lastPlayedBucket = null;
       this.statusMessage = 'Undid 1 move';
       engineViewModel.reset();
-      log('[BoardViewModel] Undid 1 move, redo stack size:', this.redoStack.length);
+      logger.debug('Undid 1 move, redo stack size:', this.redoStack.length);
       return true;
     }
     
@@ -893,13 +1046,17 @@ export class BoardViewModel {
    * Redo a single move
    */
   redoSingle(): boolean {
-    log('[BoardViewModel] redoSingle called, redo stack size:', this.redoStack.length);
+    logger.debug('redoSingle called, redo stack size:', this.redoStack.length);
     
     if (this.redoStack.length === 0) {
       return false;
     }
     
-    const moveToRedo = this.redoStack.pop()!;
+    const moveToRedo = this.redoStack.pop();
+    if (!moveToRedo) {
+      return false;
+    }
+    const annotationToRedo = this.redoAnnotations.pop();
     
     try {
       const move = this.chess.move({
@@ -909,19 +1066,23 @@ export class BoardViewModel {
       });
       
       if (move) {
+        this.historyAnnotations.push(
+          annotationToRedo ?? this.createMoveAnnotation(move, false),
+        );
+        this.syncBrilliantTrackingFromAnnotations();
         this.updateState();
         this.lastMove = { from: move.from as Square, to: move.to as Square };
         this.lastPlayedBucket = null;
         this.statusMessage = `Redid: ${move.san}`;
         engineViewModel.reset();
-        log('[BoardViewModel] Redid 1 move');
+        logger.debug('Redid 1 move');
         
         // If auto-play is enabled and it's now the engine's turn, trigger auto-play
         if (this.autoPlayEnabled && !this.isGameOver && this.chess.turn() === this.enginePlaysFor) {
-          log('[BoardViewModel] Scheduling auto-play after redo');
+          logger.debug('Scheduling auto-play after redo');
           setTimeout(() => {
-            this.solveNextMove().catch(err => {
-              console.error('[BoardViewModel] Auto-play error after redo:', err);
+            this.solveNextMove(true).catch(err => {
+              logger.error('Auto-play error after redo:', err);
             });
           }, 500);
         }
@@ -929,9 +1090,12 @@ export class BoardViewModel {
         return true;
       }
     } catch (err) {
-      console.error('[BoardViewModel] Redo failed:', err);
+      logger.error('Redo failed:', err);
       // Put the move back on the stack if it failed
       this.redoStack.push(moveToRedo);
+      if (annotationToRedo) {
+        this.redoAnnotations.push(annotationToRedo);
+      }
     }
     
     return false;
@@ -951,11 +1115,158 @@ export class BoardViewModel {
     return this.redoStack.length > 0;
   }
 
+  get debugSessionId(): string {
+    return this.gameSessionId;
+  }
+
+  get hasSkippedEngineMoveNotice(): boolean {
+    return this.lastSkippedEngineMoveMessage !== null;
+  }
+
   /**
    * Export current game as PGN
    */
   get pgn(): string {
     return this.chess.pgn();
+  }
+
+  get lastPlayerMoveQualityLabel(): string | null {
+    return this.lastPlayerMoveQuality ? DISPLAY_BUCKET_LABELS[this.lastPlayerMoveQuality] : null;
+  }
+
+  get lastPlayerMoveQualityColor(): string | null {
+    return this.lastPlayerMoveQuality ? DISPLAY_BUCKET_COLORS[this.lastPlayerMoveQuality] : null;
+  }
+
+  private wait(delayMs: number): Promise<void> {
+    return new Promise(resolve => {
+      setTimeout(resolve, delayMs);
+    });
+  }
+
+  private beginSessionState(options: {
+    gameSessionId: string;
+    gameStartFen: string;
+    resetBrilliantTracking: boolean;
+    historyAnnotations?: MoveAnnotation[];
+    redoAnnotations?: MoveAnnotation[];
+  }): void {
+    this.gameSessionId = options.gameSessionId;
+    this.gameStartFen = options.gameStartFen;
+    this.historyAnnotations = [...(options.historyAnnotations ?? [])];
+    this.redoAnnotations = [...(options.redoAnnotations ?? [])];
+    this.redoStack = this.createRedoStackFromAnnotations(this.redoAnnotations);
+    if (options.resetBrilliantTracking) {
+      featureOptionsViewModel.resetBrilliantTracking(this.gameSessionId);
+    } else {
+      this.syncBrilliantTrackingFromAnnotations();
+    }
+  }
+
+  private clearRedoState(): void {
+    this.redoStack = [];
+    this.redoAnnotations = [];
+  }
+
+  private createMoveAnnotation(
+    move: Move & { before?: string; after?: string },
+    consumedBrilliant: boolean,
+  ): MoveAnnotation {
+    return {
+      beforeFen: move.before ?? this.fen,
+      afterFen: move.after ?? this.chess.fen(),
+      uci: `${move.from}${move.to}${move.promotion || ''}`,
+      moveNumber: this.chess.moveNumber(),
+      consumedBrilliant,
+    };
+  }
+
+  private recordMoveAnnotation(
+    move: Move & { before?: string; after?: string },
+    consumedBrilliant: boolean,
+  ): void {
+    this.historyAnnotations.push(this.createMoveAnnotation(move, consumedBrilliant));
+    this.syncBrilliantTrackingFromAnnotations();
+  }
+
+  private syncBrilliantTrackingFromAnnotations(): void {
+    const usage = deriveBrilliantUsage(this.historyAnnotations);
+    featureOptionsViewModel.reconcileBrilliantTracking(
+      this.gameSessionId,
+      usage.brilliantMoveNumbers,
+    );
+  }
+
+  private undoMoves(count: number): boolean {
+    const undoneMoves: Move[] = [];
+    const undoneAnnotations: MoveAnnotation[] = [];
+
+    for (let index = 0; index < count; index += 1) {
+      const move = this.chess.undo();
+      if (!move) {
+        for (let restoreIndex = undoneMoves.length - 1; restoreIndex >= 0; restoreIndex -= 1) {
+          const restoreMove = undoneMoves[restoreIndex];
+          this.chess.move({
+            from: restoreMove.from as Square,
+            to: restoreMove.to as Square,
+            promotion: restoreMove.promotion,
+          });
+        }
+        return false;
+      }
+
+      undoneMoves.push(move);
+      const annotation = this.historyAnnotations.pop();
+      if (annotation) {
+        undoneAnnotations.push(annotation);
+      }
+    }
+
+    this.redoStack.push(...undoneMoves);
+    this.redoAnnotations.push(...undoneAnnotations);
+    this.syncBrilliantTrackingFromAnnotations();
+    return true;
+  }
+
+  private readPersistedBoardState(): PersistedBoardState | null {
+    try {
+      if (!featureOptionsViewModel.persistEngineConfig) {
+        return null;
+      }
+
+      const saved = localStorage.getItem(this.BOARD_STATE_STORAGE_KEY);
+      if (!saved) {
+        return null;
+      }
+
+      const parsed = JSON.parse(saved) as Partial<PersistedBoardState>;
+      return {
+        currentFen: parsed.currentFen ?? '',
+        fenHistory: Array.isArray(parsed.fenHistory) ? parsed.fenHistory : [],
+        gameSessionId: parsed.gameSessionId ?? createGameSessionId(),
+        gameStartFen: parsed.gameStartFen ?? parsed.currentFen ?? new Chess().fen(),
+        historyAnnotations: Array.isArray(parsed.historyAnnotations) ? parsed.historyAnnotations : [],
+        redoAnnotations: Array.isArray(parsed.redoAnnotations) ? parsed.redoAnnotations : [],
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private clearPersistedBoardState(): void {
+    try {
+      localStorage.removeItem(this.BOARD_STATE_STORAGE_KEY);
+    } catch (error) {
+      logger.error('Failed to clear board state storage:', error);
+    }
+  }
+
+  private createRedoStackFromAnnotations(annotations: MoveAnnotation[]): Move[] {
+    return annotations.map((annotation) => ({
+      from: annotation.uci.slice(0, 2),
+      to: annotation.uci.slice(2, 4),
+      promotion: annotation.uci.length > 4 ? annotation.uci[4] : undefined,
+    })) as Move[];
   }
 }
 

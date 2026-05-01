@@ -6,7 +6,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { configure } from 'mobx';
-import App from './App';
+import { App } from './App';
 import './styles/global.css';
 
 // Configure MobX for strict mode

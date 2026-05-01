@@ -21,7 +21,7 @@ interface ChessBoardProps {
 // Set to true for debugging, false for production
 const DEBUG = false; // Disabled to prevent performance issues
 
-const log = (...args: any[]) => {
+const log = (...args: unknown[]) => {
   if (DEBUG) console.log(...args);
 };
 

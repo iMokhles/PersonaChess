@@ -1,2 +1,8 @@
-// See the Electron documentation for details on how to use preload scripts:
-// https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
+import { contextBridge, ipcRenderer } from 'electron';
+import type { FeatureOptions } from './engine/featureOptions';
+
+contextBridge.exposeInMainWorld('personaChessBridge', {
+  syncFeatureOptions: (options: FeatureOptions) => {
+    ipcRenderer.send('feature-options:sync', options);
+  },
+} as const);

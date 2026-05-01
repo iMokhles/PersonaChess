@@ -6,3 +6,4 @@
 export { ChessBoardComponent } from './ChessBoard';
 export { ConfigPanel } from './ConfigPanel';
 export { ControlPanel } from './ControlPanel';
+export { FeatureOptionsPanel } from './FeatureOptionsPanel';

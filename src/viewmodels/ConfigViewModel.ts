@@ -3,9 +3,18 @@
  * ViewModel layer - MobX store for bucket configuration
  */
 
-import { makeAutoObservable, action } from 'mobx';
+import { makeAutoObservable, action, reaction } from 'mobx';
 import { BucketConfig, MoveBucket, DEFAULT_BUCKET_CONFIG, MoveQualityPresetId, MOVE_QUALITY_PRESETS } from '../engine/types';
+import { ENGINE_CONFIG_STORAGE_KEY } from '../engine/featureOptions';
 import { normalizeBucketConfig, validateBucketConfig } from '../engine/movePicker';
+import { featureOptionsViewModel } from './FeatureOptionsViewModel';
+
+interface PersistedEngineConfig {
+  bucketConfig: BucketConfig;
+  currentPresetId: MoveQualityPresetId | null;
+  depth: number;
+  multiPV: number;
+}
 
 export class ConfigViewModel {
   bucketConfig: BucketConfig = { ...DEFAULT_BUCKET_CONFIG };
@@ -24,6 +33,27 @@ export class ConfigViewModel {
       setDepth: action,
       setMultiPV: action,
     });
+
+    this.restoreFromStorage();
+
+    reaction(
+      () => ({
+        bucketConfig: this.bucketConfig,
+        currentPresetId: this.currentPresetId,
+        depth: this.depth,
+        multiPV: this.multiPV,
+        persistEngineConfig: featureOptionsViewModel.persistEngineConfig,
+      }),
+      ({ persistEngineConfig }) => {
+        if (!persistEngineConfig) {
+          this.clearPersistedStorage();
+          return;
+        }
+
+        this.persistToStorage();
+      },
+      { fireImmediately: true },
+    );
   }
 
   /**
@@ -105,6 +135,54 @@ export class ConfigViewModel {
    */
   get validationState(): { valid: boolean; total: number } {
     return validateBucketConfig(this.bucketConfig);
+  }
+
+  private restoreFromStorage(): void {
+    try {
+      const saved = localStorage.getItem(ENGINE_CONFIG_STORAGE_KEY);
+      if (!saved) {
+        return;
+      }
+
+      const parsed = JSON.parse(saved) as Partial<PersistedEngineConfig>;
+      if (parsed.bucketConfig) {
+        this.bucketConfig = { ...DEFAULT_BUCKET_CONFIG, ...parsed.bucketConfig };
+      }
+      if (parsed.currentPresetId !== undefined) {
+        this.currentPresetId = parsed.currentPresetId;
+      }
+      if (typeof parsed.depth === 'number') {
+        this.depth = Math.max(1, Math.min(30, parsed.depth));
+      }
+      if (typeof parsed.multiPV === 'number') {
+        this.multiPV = Math.max(1, Math.min(20, parsed.multiPV));
+      }
+    } catch (error) {
+      console.error('[ConfigViewModel] Failed to restore engine config:', error);
+    }
+  }
+
+  private persistToStorage(): void {
+    try {
+      const snapshot: PersistedEngineConfig = {
+        bucketConfig: this.bucketConfig,
+        currentPresetId: this.currentPresetId,
+        depth: this.depth,
+        multiPV: this.multiPV,
+      };
+
+      localStorage.setItem(ENGINE_CONFIG_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch (error) {
+      console.error('[ConfigViewModel] Failed to persist engine config:', error);
+    }
+  }
+
+  private clearPersistedStorage(): void {
+    try {
+      localStorage.removeItem(ENGINE_CONFIG_STORAGE_KEY);
+    } catch (error) {
+      console.error('[ConfigViewModel] Failed to clear engine config storage:', error);
+    }
   }
 }
 

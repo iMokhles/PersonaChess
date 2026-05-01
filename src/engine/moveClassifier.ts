@@ -8,6 +8,7 @@
 import { 
   AnalyzedMove, 
   ClassifiedMove, 
+  DisplayMoveBucket,
   MoveBucket, 
   BUCKET_EVAL_RANGES 
 } from './types';
@@ -98,4 +99,64 @@ export function hasMoveInBucket(moves: ClassifiedMove[], bucket: MoveBucket): bo
  */
 export function getMovesFromBucket(moves: ClassifiedMove[], bucket: MoveBucket): ClassifiedMove[] {
   return moves.filter(move => move.bucket === bucket);
+}
+
+const BUCKET_ORDER: MoveBucket[] = ['best', 'great', 'excellent', 'good', 'inaccuracy', 'mistake', 'blunder'];
+
+export function classifyUnanalyzedMove(): DisplayMoveBucket {
+  return 'fallback';
+}
+
+export function mapLegalMovesToBuckets(
+  legalMoves: string[],
+  analyzedMoves: ClassifiedMove[],
+  useImprovedFallback: boolean,
+): Record<string, DisplayMoveBucket> {
+  const moveMap: Record<string, DisplayMoveBucket> = {};
+
+  for (const analyzedMove of analyzedMoves) {
+    moveMap[analyzedMove.move] = analyzedMove.bucket;
+  }
+
+  for (const move of legalMoves) {
+    if (!moveMap[move]) {
+      moveMap[move] = useImprovedFallback ? classifyUnanalyzedMove() : 'good';
+    }
+  }
+
+  return moveMap;
+}
+
+export function findClosestAvailableBucket(
+  targetBucket: MoveBucket,
+  availableBuckets: MoveBucket[],
+): MoveBucket | null {
+  if (availableBuckets.length === 0) {
+    return null;
+  }
+
+  const targetIndex = BUCKET_ORDER.indexOf(targetBucket);
+  if (targetIndex === -1) {
+    return availableBuckets[0];
+  }
+
+  for (let offset = 1; offset < BUCKET_ORDER.length; offset += 1) {
+    const betterIndex = targetIndex - offset;
+    if (betterIndex >= 0) {
+      const betterBucket = BUCKET_ORDER[betterIndex];
+      if (availableBuckets.includes(betterBucket)) {
+        return betterBucket;
+      }
+    }
+
+    const worseIndex = targetIndex + offset;
+    if (worseIndex < BUCKET_ORDER.length) {
+      const worseBucket = BUCKET_ORDER[worseIndex];
+      if (availableBuckets.includes(worseBucket)) {
+        return worseBucket;
+      }
+    }
+  }
+
+  return availableBuckets[0];
 }

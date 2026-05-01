@@ -1,0 +1,105 @@
+.feature-options-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feature-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feature-option-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.feature-option-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.feature-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.feature-option-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.feature-option-description {
+  font-size: 10px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.feature-option-toggle {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #4a9eff;
+  flex-shrink: 0;
+}
+
+.feature-option-detail {
+  margin-left: 12px;
+  padding: 8px 10px;
+  border-left: 1px solid rgba(74, 158, 255, 0.25);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0 10px 10px 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.feature-option-detail.disabled {
+  opacity: 0.6;
+}
+
+.feature-option-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.feature-option-field-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.feature-option-select {
+  width: 100%;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+}
+
+.feature-option-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.feature-option-usage {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}

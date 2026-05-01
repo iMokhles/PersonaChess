@@ -4,34 +4,118 @@
  */
 
 import { makeAutoObservable, action, runInAction } from 'mobx';
+import {
+  AnalysisPurpose,
+  AnalysisSnapshot,
+  isStaleAnalysisRequest,
+} from '../engine/analysisSafety';
 import { stockfishService } from '../engine/stockfish.service';
-import { classifyMoves } from '../engine/moveClassifier';
-import { pickMove } from '../engine/movePicker';
+import { classifyMoves, getMoveStats, groupMovesByBucket } from '../engine/moveClassifier';
+import {
+  pickBucketLegacy,
+  pickBucketWithClosestFallback,
+  pickRandomMoveFromBucket,
+} from '../engine/movePicker';
 import { 
+  AnalyzedMove,
   ClassifiedMove, 
   PickedMoveResult, 
   MoveBucket,
-  BucketConfig 
+  BucketConfig,
 } from '../engine/types';
-import { getMoveStats, groupMovesByBucket } from '../engine/moveClassifier';
+import { analysisCache, buildAnalysisCacheKey } from '../engine/analysisCache';
+import { featureOptionsViewModel } from './FeatureOptionsViewModel';
+import { getBrilliantMoveCandidates, pickBrilliantMove } from '../engine/brilliantMove';
+import { detectGamePhase } from '../engine/gamePhase';
+import {
+  adjustBucketConfigForComplexity,
+  calculatePositionComplexity,
+  PositionComplexityResult,
+} from '../engine/positionComplexity';
+import {
+  applyPersonaBucketBias,
+  pickPersonaBiasedMove,
+} from '../engine/personaBias';
+import {
+  buildDeterministicSeed,
+  createLegacyRandomSource,
+  createSeededRandomSource,
+} from '../engine/random';
+import { PersonaId } from '../engine/featureOptions';
+import { createDebugLogger } from '../shared/debug';
+
+interface MoveSelectionContext {
+  fen: string;
+  gameStartFen: string;
+  moveCount: number;
+  sideToMove: 'w' | 'b';
+  persona: PersonaId;
+}
+
+export interface PositionAnalysisResult extends AnalysisSnapshot<ClassifiedMove[]> {
+  complexity: PositionComplexityResult;
+  ignored: boolean;
+  fromCache: boolean;
+  purpose: AnalysisPurpose;
+}
+
+interface ActiveAnalysisRun {
+  cacheKey: string;
+  fen: string;
+  purpose: AnalysisPurpose;
+  promise: Promise<PositionAnalysisResult>;
+}
+
+const logger = createDebugLogger('EngineViewModel');
+
+function canUseBrilliantMoveBudget(moveCount: number, fen: string): boolean {
+  if (!featureOptionsViewModel.useBrilliantMoveBudget) {
+    return false;
+  }
+
+  if (!featureOptionsViewModel.hasRemainingBrilliantMoves) {
+    return false;
+  }
+
+  if (featureOptionsViewModel.brilliantMovesPerGame === 0) {
+    return false;
+  }
+
+  const phase = detectGamePhase(fen, moveCount).phase;
+  return featureOptionsViewModel.brilliantAllowedPhase === 'any'
+    || featureOptionsViewModel.brilliantAllowedPhase === phase;
+}
 
 export class EngineViewModel {
-  isInitialized: boolean = false;
-  isAnalyzing: boolean = false;
+  isInitialized = false;
+  isInitializing = false;
+  isAnalyzing = false;
   analyzedMoves: ClassifiedMove[] = [];
   lastPickedMove: PickedMoveResult | null = null;
   error: string | null = null;
+  lastComplexity: PositionComplexityResult | null = null;
+  lastAnalysisFromCache = false;
+  lastAnalysisPurpose: AnalysisPurpose | null = null;
+  private nextRequestIds: Record<AnalysisPurpose, number> = {
+    engineMove: 0,
+    background: 0,
+  };
+  private latestRequestIds: Record<AnalysisPurpose, number> = {
+    engineMove: 0,
+    background: 0,
+  };
+  private activeAnalysisRun: ActiveAnalysisRun | null = null;
 
   constructor() {
     makeAutoObservable(this, {
       initialize: action,
       analyzePosition: action,
-      pickMoveFromBuckets: action,
+      pickMoveFromAnalysis: action,
       reset: action,
       setError: action,
     });
     
-    console.log('[EngineViewModel] Initialized');
+    logger.debug('Initialized');
   }
 
   /**
@@ -39,27 +123,27 @@ export class EngineViewModel {
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
-      console.log('[EngineViewModel] Already initialized');
+      logger.debug('Already initialized');
       return;
     }
 
-    console.log('[EngineViewModel] Starting initialization...');
-    
     try {
-      this.error = null;
-      console.log('[EngineViewModel] Calling stockfishService.initialize()...');
+      runInAction(() => {
+        this.error = null;
+        this.isInitializing = true;
+      });
       await stockfishService.initialize();
-      console.log('[EngineViewModel] Stockfish service initialized');
       
       runInAction(() => {
         this.isInitialized = true;
+        this.isInitializing = false;
       });
-      
-      console.log('[EngineViewModel] Initialization complete');
+      logger.debug('Initialization complete');
     } catch (err) {
-      console.error('[EngineViewModel] Initialization error:', err);
+      logger.error('Initialization error:', err);
       runInAction(() => {
         this.error = `Failed to initialize engine: ${err}`;
+        this.isInitializing = false;
       });
       throw err;
     }
@@ -69,49 +153,85 @@ export class EngineViewModel {
    * Configure engine settings
    */
   configure(options: { multiPV?: number; depth?: number }): void {
-    console.log('[EngineViewModel] Configuring:', options);
+    logger.debug('Configuring:', options);
     stockfishService.configure(options);
   }
 
   /**
    * Analyze a position and classify moves
    */
-  async analyzePosition(fen: string, depth: number = 20, multiPV: number = 12): Promise<ClassifiedMove[]> {
-    console.log('[EngineViewModel] analyzePosition called', { fen, depth, multiPV });
+  async analyzePosition(
+    fen: string,
+    depth = 20,
+    multiPV = 12,
+    purpose: AnalysisPurpose = 'background',
+  ): Promise<PositionAnalysisResult> {
+    logger.debug('analyzePosition called', { fen, depth, multiPV, purpose });
     
     if (!this.isInitialized) {
-      console.log('[EngineViewModel] Not initialized, initializing now...');
       await this.initialize();
     }
 
     try {
+      const cacheKey = buildAnalysisCacheKey(fen, depth, multiPV);
+      const requestId = ++this.nextRequestIds[purpose];
+      this.latestRequestIds[purpose] = requestId;
+
+      if (this.activeAnalysisRun) {
+        if (this.activeAnalysisRun.cacheKey === cacheKey) {
+          const sharedResult = await this.activeAnalysisRun.promise;
+          return {
+            ...sharedResult,
+            requestId,
+            purpose,
+            ignored: isStaleAnalysisRequest(requestId, this.latestRequestIds[purpose]) || sharedResult.ignored,
+          };
+        }
+
+        if (purpose === 'engineMove') {
+          this.latestRequestIds[this.activeAnalysisRun.purpose] += 1;
+          stockfishService.stop();
+          await this.activeAnalysisRun.promise.catch(() => undefined);
+        }
+
+        if (purpose === 'background') {
+          await this.activeAnalysisRun.promise.catch(() => undefined);
+        }
+      }
+
       runInAction(() => {
         this.isAnalyzing = true;
         this.error = null;
-        this.analyzedMoves = [];
-        this.lastPickedMove = null;
+        if (purpose === 'engineMove') {
+          this.analyzedMoves = [];
+          this.lastPickedMove = null;
+        }
       });
 
-      // Configure engine
-      stockfishService.configure({ depth, multiPV });
-
-      // Analyze position
-      console.log('[EngineViewModel] Starting analysis...');
-      const moves = await stockfishService.analyzePosition(fen);
-      console.log('[EngineViewModel] Analysis complete, got', moves.length, 'moves');
-      
-      // Classify moves
-      const classified = classifyMoves(moves);
-      console.log('[EngineViewModel] Classified', classified.length, 'moves');
-
-      runInAction(() => {
-        this.analyzedMoves = classified;
-        this.isAnalyzing = false;
+      const runPromise = this.performPositionAnalysis({
+        fen,
+        depth,
+        multiPV,
+        cacheKey,
+        requestId,
+        purpose,
       });
+      this.activeAnalysisRun = {
+        cacheKey,
+        fen,
+        purpose,
+        promise: runPromise,
+      };
 
-      return classified;
+      try {
+        return await runPromise;
+      } finally {
+        if (this.activeAnalysisRun?.promise === runPromise) {
+          this.activeAnalysisRun = null;
+        }
+      }
     } catch (err) {
-      console.error('[EngineViewModel] Analysis error:', err);
+      logger.error('Analysis error:', err);
       runInAction(() => {
         this.error = `Analysis failed: ${err}`;
         this.isAnalyzing = false;
@@ -123,19 +243,84 @@ export class EngineViewModel {
   /**
    * Pick a move from the analyzed moves using bucket configuration
    */
-  pickMoveFromBuckets(config: BucketConfig): PickedMoveResult | null {
-    console.log('[EngineViewModel] pickMoveFromBuckets called', { 
-      analyzedMovesCount: this.analyzedMoves.length,
+  pickMoveFromAnalysis(
+    analysis: PositionAnalysisResult,
+    config: BucketConfig,
+    context: MoveSelectionContext,
+  ): PickedMoveResult | null {
+    logger.debug('pickMoveFromAnalysis called', {
+      analyzedMovesCount: analysis.moves.length,
       config 
     });
     
-    if (this.analyzedMoves.length === 0) {
-      console.log('[EngineViewModel] No analyzed moves available');
+    if (analysis.ignored || analysis.moves.length === 0) {
+      logger.debug('No analyzed moves available');
       return null;
     }
 
-    const result = pickMove(this.analyzedMoves, config);
-    console.log('[EngineViewModel] Picked move:', result);
+    const randomSource = featureOptionsViewModel.useDeterministicRng
+      ? createSeededRandomSource(
+          buildDeterministicSeed({
+            gameStartFen: context.gameStartFen,
+            currentFen: context.fen,
+            moveCount: context.moveCount,
+            sideToMove: context.sideToMove,
+            persona: context.persona,
+          }),
+        )
+      : createLegacyRandomSource();
+
+    let effectiveConfig: BucketConfig = { ...config };
+
+    if (featureOptionsViewModel.usePositionComplexity) {
+      effectiveConfig = adjustBucketConfigForComplexity(effectiveConfig, analysis.complexity);
+    }
+
+    if (featureOptionsViewModel.usePersonaBehaviorBias) {
+      effectiveConfig = applyPersonaBucketBias(effectiveConfig, context.persona) as BucketConfig;
+    }
+
+    if (canUseBrilliantMoveBudget(context.moveCount, context.fen)) {
+      const brilliantCandidates = getBrilliantMoveCandidates(context.fen, analysis.moves);
+      const shouldPickBrilliant = brilliantCandidates.length > 0 && randomSource.next() < 0.35;
+
+      if (shouldPickBrilliant) {
+        const brilliantMove = pickBrilliantMove(brilliantCandidates, randomSource);
+
+        if (brilliantMove) {
+          const brilliantResult = {
+            move: brilliantMove,
+            bucket: brilliantMove.bucket,
+            isBrilliant: true,
+          };
+
+          runInAction(() => {
+            this.lastPickedMove = brilliantResult;
+          });
+
+          return brilliantResult;
+        }
+      }
+    }
+
+    const bucketSelection = featureOptionsViewModel.useImprovedMoveClassification
+      ? pickBucketWithClosestFallback(analysis.moves, effectiveConfig, () => randomSource.next())
+      : pickBucketLegacy(analysis.moves, effectiveConfig, () => randomSource.next());
+
+    if (!bucketSelection) {
+      return null;
+    }
+
+    const selectedMove = featureOptionsViewModel.usePersonaBehaviorBias
+      ? pickPersonaBiasedMove(context.fen, bucketSelection.moves, context.persona, randomSource)
+      : pickRandomMoveFromBucket(bucketSelection, () => randomSource.next());
+
+    const result = {
+      move: selectedMove,
+      bucket: bucketSelection.bucket,
+      isBrilliant: false,
+    };
+    logger.debug('Picked move:', result);
     
     runInAction(() => {
       this.lastPickedMove = result;
@@ -148,7 +333,7 @@ export class EngineViewModel {
    * Stop current analysis
    */
   stopAnalysis(): void {
-    console.log('[EngineViewModel] stopAnalysis called');
+    logger.debug('stopAnalysis called');
     stockfishService.stop();
     runInAction(() => {
       this.isAnalyzing = false;
@@ -159,7 +344,7 @@ export class EngineViewModel {
    * Start a new game
    */
   newGame(): void {
-    console.log('[EngineViewModel] newGame called');
+    logger.debug('newGame called');
     stockfishService.newGame();
     this.reset();
   }
@@ -168,10 +353,14 @@ export class EngineViewModel {
    * Reset state
    */
   reset(): void {
-    console.log('[EngineViewModel] reset called');
+    logger.debug('reset called');
     this.analyzedMoves = [];
     this.lastPickedMove = null;
+    this.lastComplexity = null;
+    this.lastAnalysisFromCache = false;
+    this.lastAnalysisPurpose = null;
     this.error = null;
+    this.isInitializing = false;
   }
 
   /**
@@ -208,16 +397,120 @@ export class EngineViewModel {
   get hasAnalyzedMoves(): boolean {
     return this.analyzedMoves.length > 0;
   }
-
   /**
    * Destroy the engine
    */
   destroy(): void {
-    console.log('[EngineViewModel] destroy called');
+    logger.debug('destroy called');
     stockfishService.destroy();
     runInAction(() => {
       this.isInitialized = false;
     });
+  }
+
+  private async performPositionAnalysis(options: {
+    fen: string;
+    depth: number;
+    multiPV: number;
+    cacheKey: string;
+    requestId: number;
+    purpose: AnalysisPurpose;
+  }): Promise<PositionAnalysisResult> {
+    const { fen, depth, multiPV, cacheKey, requestId, purpose } = options;
+    let cachedClassifiedMoves: ClassifiedMove[] | undefined;
+    let fromCache = false;
+    let moves: AnalyzedMove[] = [];
+
+    if (featureOptionsViewModel.useMoveAnalysisCache) {
+      const cached = analysisCache.get(cacheKey);
+      if (cached) {
+        moves = cached.moves;
+        cachedClassifiedMoves = cached.classifiedMoves;
+        fromCache = true;
+      }
+    }
+
+    if (moves.length === 0) {
+      stockfishService.configure({ depth, multiPV });
+      logger.debug('Starting analysis...');
+      moves = await stockfishService.analyzePosition(fen);
+      logger.debug('Analysis complete, got', moves.length, 'moves');
+
+      if (featureOptionsViewModel.useMoveAnalysisCache) {
+        analysisCache.set({
+          key: cacheKey,
+          moves,
+          timestamp: Date.now(),
+        });
+      }
+    } else {
+      logger.debug('Using cached analysis for current position');
+    }
+
+    const classified = cachedClassifiedMoves ?? classifyMoves(moves);
+    const complexity = calculatePositionComplexity(moves);
+    const ignored = isStaleAnalysisRequest(requestId, this.latestRequestIds[purpose]);
+
+    if (featureOptionsViewModel.useMoveAnalysisCache && moves.length > 0) {
+      analysisCache.set({
+        key: cacheKey,
+        moves,
+        classifiedMoves: classified,
+        timestamp: Date.now(),
+      });
+    }
+
+    if (!ignored) {
+      runInAction(() => {
+        this.lastAnalysisFromCache = fromCache;
+        this.lastAnalysisPurpose = purpose;
+        if (purpose === 'engineMove') {
+          this.analyzedMoves = classified;
+          this.lastComplexity = complexity;
+        }
+        this.isAnalyzing = false;
+      });
+    } else if (this.activeAnalysisRun?.purpose === purpose) {
+      runInAction(() => {
+        this.isAnalyzing = false;
+      });
+    }
+
+    return {
+      requestId,
+      analyzedFen: fen,
+      moves: classified,
+      complexity,
+      ignored,
+      fromCache,
+      purpose,
+    };
+  }
+
+  get analysisStatusLabel(): string {
+    if (this.error) {
+      return 'Engine error';
+    }
+
+    if (this.isInitializing) {
+      return 'Starting engine';
+    }
+
+    if (this.isAnalyzing) {
+      return this.lastAnalysisPurpose === 'background'
+        ? 'Running background analysis'
+        : 'Analyzing position';
+    }
+
+    if (!this.isInitialized) {
+      return 'Not initialized';
+    }
+
+    if (this.lastAnalysisPurpose === null) {
+      return 'Ready';
+    }
+
+    return this.lastAnalysisFromCache ? 'Ready (cache warm)' : 'Ready';
   }
 }
 

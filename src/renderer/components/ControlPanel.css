@@ -22,6 +22,25 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
+.status-subtle {
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.status-note {
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.warning-note {
+  color: #ffd38a;
+  background: rgba(255, 193, 7, 0.12);
+  border: 1px solid rgba(255, 193, 7, 0.18);
+}
+
 .thinking-indicator {
   display: flex;
   align-items: center;
@@ -171,6 +190,13 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
+.debug-value {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-value.ready {
   color: #26a641;
 }
@@ -182,6 +208,20 @@
   border-radius: 6px;
   color: #f85149;
   font-size: 11px;
+}
+
+.btn-debug-toggle {
+  align-self: flex-start;
+  width: auto;
+  padding: 6px 10px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-debug-toggle.active {
+  border: 1px solid rgba(74, 158, 255, 0.35);
+  background: rgba(74, 158, 255, 0.15);
+  color: #d7ebff;
 }
 
 /* Action Buttons */

@@ -61,6 +61,11 @@
   color: #fff;
 }
 
+.preset-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .preset-btn.active {
   background: rgba(74, 158, 255, 0.25);
   border-color: #4a9eff;
@@ -170,6 +175,11 @@
 
 .slider::-webkit-slider-thumb:hover {
   transform: scale(1.1);
+}
+
+.slider:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .slider::-moz-range-thumb {

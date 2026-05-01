@@ -87,6 +87,16 @@
   overflow-y: auto;
 }
 
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-section > * {
+  height: auto;
+}
+
 /* Footer */
 .app-footer {
   padding: 12px 32px;

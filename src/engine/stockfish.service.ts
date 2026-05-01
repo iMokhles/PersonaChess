@@ -6,8 +6,10 @@
  */
 
 import { AnalyzedMove, StockfishInfo } from './types';
+import { createDebugLogger } from '../shared/debug';
 
 type MessageHandler = (message: string) => void;
+const logger = createDebugLogger('StockfishService');
 
 export class StockfishService {
   private worker: Worker | null = null;
@@ -41,7 +43,7 @@ export class StockfishService {
         };
 
         this.worker.onerror = (error) => {
-          console.error('Stockfish worker error:', error);
+          logger.error('Worker error:', error);
           reject(error);
         };
 
@@ -94,9 +96,8 @@ export class StockfishService {
    * Handle incoming message from engine
    */
   private handleMessage(message: string): void {
-    // Log all messages for debugging
-    if (message && (message.startsWith('info') || message.startsWith('bestmove') || message.includes('ready'))) {
-      console.log('[StockfishService] Message:', message);
+    if (message && (message.startsWith('bestmove') || message === 'readyok' || message === 'uciok')) {
+      logger.debug('Message:', message);
     }
     this.messageHandlers.forEach(handler => handler(message));
   }
@@ -172,7 +173,7 @@ export class StockfishService {
         hasReceivedBestMove = true;
         this.removeMessageHandler(analysisHandler);
 
-        console.log('[StockfishService] Completing analysis, collected', moves.size, 'moves');
+        logger.debug('Completing analysis, collected', moves.size, 'moves');
 
         // Convert to AnalyzedMove array
         const analyzedMoves: AnalyzedMove[] = [];
@@ -193,12 +194,12 @@ export class StockfishService {
         }
 
         if (analyzedMoves.length > 0) {
-          console.log('[StockfishService] Returning', analyzedMoves.length, 'analyzed moves');
+          logger.debug('Returning', analyzedMoves.length, 'analyzed moves');
           resolve(analyzedMoves);
         } else {
           // Check if this is a game over position (checkmate/stalemate)
           // If we received mate scores but no moves, it's game over
-          console.log('[StockfishService] No moves collected - likely game over position');
+          logger.debug('No moves collected - likely game over position');
           resolve([]); // Return empty array instead of rejecting for game over positions
         }
       };
@@ -206,12 +207,12 @@ export class StockfishService {
       // Add timeout to force stop after reasonable time
       const forceStopTimeout = setTimeout(() => {
         if (!hasReceivedBestMove) {
-          console.log('[StockfishService] Forcing stop after 10 seconds to get bestmove');
+          logger.warn('Forcing stop after 10 seconds to get bestmove');
           this.sendCommand('stop');
           // Give it a moment to respond with bestmove
           setTimeout(() => {
             if (!hasReceivedBestMove) {
-              console.log('[StockfishService] No bestmove after stop, using collected moves');
+              logger.warn('No bestmove after stop, using collected moves');
               completeAnalysis();
             }
           }, 1000);
@@ -221,7 +222,7 @@ export class StockfishService {
       // Add absolute timeout to prevent hanging
       const absoluteTimeout = setTimeout(() => {
         if (!hasReceivedBestMove) {
-          console.error('[StockfishService] Analysis timeout after 30 seconds');
+          logger.error('Analysis timeout after 30 seconds');
           this.removeMessageHandler(analysisHandler);
           clearTimeout(forceStopTimeout);
           completeAnalysis(); // Try to use what we have
@@ -229,18 +230,16 @@ export class StockfishService {
       }, 30000); // 30 second absolute timeout
 
       const analysisHandler = (message: string) => {
-        console.log('[StockfishService] Received message:', message);
-        
         // Check for mate scores (game over positions)
         if (message.includes('score mate')) {
           // Extract mate score to detect checkmate/stalemate
           const mateMatch = message.match(/score mate (-?\d+)/);
           if (mateMatch) {
             const mateIn = parseInt(mateMatch[1], 10);
-            console.log('[StockfishService] Detected mate score:', mateIn);
+            logger.debug('Detected mate score:', mateIn);
             // If mate is 0 or negative, it's checkmate/stalemate (no moves available)
             if (mateIn <= 0) {
-              console.log('[StockfishService] Game over position detected (checkmate/stalemate)');
+              logger.debug('Game over position detected (checkmate/stalemate)');
             }
           }
         }
@@ -249,7 +248,6 @@ export class StockfishService {
         if (message.startsWith('info') && message.includes('multipv')) {
           const info = this.parseInfoLine(message);
           if (info) {
-            console.log('[StockfishService] Parsed info:', info);
             moves.set(info.multipv, info);
             if (info.multipv === 1) {
               bestScore = info.score;
@@ -257,7 +255,7 @@ export class StockfishService {
               
               // If we've reached the target depth and have enough moves, we can stop early
               if (info.depth >= this.depth && moves.size >= Math.min(3, this.multiPV)) {
-                console.log('[StockfishService] Reached target depth, stopping early');
+                logger.debug('Reached target depth, stopping early');
                 this.sendCommand('stop');
               }
             }
@@ -276,13 +274,13 @@ export class StockfishService {
           if (bestmoveMatch) {
             const bestmove = bestmoveMatch[1];
             if (bestmove === '(none)' || bestmove === 'none' || bestmove === '0000') {
-              console.log('[StockfishService] No legal moves (checkmate/stalemate)');
+              logger.debug('No legal moves (checkmate/stalemate)');
               resolve([]); // Return empty array for game over positions
               return;
             }
           }
 
-          console.log('[StockfishService] Received bestmove, collected', moves.size, 'moves');
+          logger.debug('Received bestmove, collected', moves.size, 'moves');
 
           // Convert to AnalyzedMove array
           const analyzedMoves: AnalyzedMove[] = [];
@@ -304,10 +302,10 @@ export class StockfishService {
 
           // If we have no moves but got a bestmove, it might still be game over
           if (analyzedMoves.length === 0) {
-            console.log('[StockfishService] No moves in bestmove response - game over position');
+            logger.debug('No moves in bestmove response - game over position');
             resolve([]);
           } else {
-            console.log('[StockfishService] Returning', analyzedMoves.length, 'analyzed moves');
+            logger.debug('Returning', analyzedMoves.length, 'analyzed moves');
             resolve(analyzedMoves);
           }
         }
@@ -319,7 +317,7 @@ export class StockfishService {
       const readyHandler = (msg: string) => {
         if (msg === 'readyok') {
           this.removeMessageHandler(readyHandler);
-          console.log('[StockfishService] Engine ready, sending position and starting analysis');
+          logger.debug('Engine ready, sending position and starting analysis');
           this.sendCommand(`position fen ${fen}`);
           this.sendCommand(`go depth ${this.depth}`);
         }
@@ -327,8 +325,7 @@ export class StockfishService {
       this.addMessageHandler(readyHandler);
 
       // Send position and start analysis
-      console.log('[StockfishService] Starting analysis for FEN:', fen);
-      console.log('[StockfishService] Config: MultiPV=', this.multiPV, 'Depth=', this.depth);
+      logger.debug('Starting analysis for FEN:', fen, 'MultiPV=', this.multiPV, 'Depth=', this.depth);
       
       this.sendCommand(`setoption name MultiPV value ${this.multiPV}`);
       this.sendCommand('isready');

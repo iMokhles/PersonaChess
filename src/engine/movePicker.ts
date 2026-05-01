@@ -12,69 +12,142 @@ import {
   PickedMoveResult,
   DEFAULT_BUCKET_CONFIG 
 } from './types';
-import { groupMovesByBucket } from './moveClassifier';
+import { findClosestAvailableBucket, groupMovesByBucket } from './moveClassifier';
+
+export type RandomNumberGenerator = () => number;
+
+interface BucketSelection {
+  bucket: MoveBucket;
+  moves: ClassifiedMove[];
+}
+
+function getBucketOrder(): MoveBucket[] {
+  return ['best', 'great', 'excellent', 'good', 'inaccuracy', 'mistake', 'blunder'];
+}
+
+function getAvailableBuckets(
+  moves: ClassifiedMove[],
+  config: BucketConfig,
+): BucketSelection[] {
+  const grouped = groupMovesByBucket(moves);
+  const availableBuckets: BucketSelection[] = [];
+
+  for (const bucket of getBucketOrder()) {
+    const bucketMoves = grouped.get(bucket) || [];
+    if (bucketMoves.length > 0 && config[bucket] > 0) {
+      availableBuckets.push({ bucket, moves: bucketMoves });
+    }
+  }
+
+  return availableBuckets;
+}
+
+function pickWeightedBucket(
+  weightedBuckets: Array<{ bucket: MoveBucket; weight: number }>,
+  random: RandomNumberGenerator,
+): MoveBucket | null {
+  const totalWeight = weightedBuckets.reduce((sum, entry) => sum + entry.weight, 0);
+
+  if (totalWeight <= 0) {
+    return null;
+  }
+
+  let selection = random() * totalWeight;
+
+  for (const entry of weightedBuckets) {
+    selection -= entry.weight;
+    if (selection <= 0) {
+      return entry.bucket;
+    }
+  }
+
+  return weightedBuckets[weightedBuckets.length - 1]?.bucket ?? null;
+}
+
+export function pickBucketLegacy(
+  moves: ClassifiedMove[],
+  config: BucketConfig = DEFAULT_BUCKET_CONFIG,
+  random: RandomNumberGenerator = Math.random,
+): BucketSelection | null {
+  if (moves.length === 0) return null;
+
+  const availableBuckets = getAvailableBuckets(moves, config);
+  if (availableBuckets.length === 0) {
+    return {
+      bucket: moves[0].bucket,
+      moves: [moves[0]],
+    };
+  }
+
+  const weightedBuckets = availableBuckets.map((entry) => ({
+    bucket: entry.bucket,
+    weight: config[entry.bucket],
+  }));
+  const selectedBucket = pickWeightedBucket(weightedBuckets, random);
+
+  if (!selectedBucket) {
+    return availableBuckets[0];
+  }
+
+  return availableBuckets.find((entry) => entry.bucket === selectedBucket) ?? availableBuckets[0];
+}
+
+export function pickBucketWithClosestFallback(
+  moves: ClassifiedMove[],
+  config: BucketConfig = DEFAULT_BUCKET_CONFIG,
+  random: RandomNumberGenerator = Math.random,
+): BucketSelection | null {
+  if (moves.length === 0) return null;
+
+  const grouped = groupMovesByBucket(moves);
+  const weightedBuckets = getBucketOrder()
+    .filter((bucket) => config[bucket] > 0)
+    .map((bucket) => ({ bucket, weight: config[bucket] }));
+  const selectedBucket = pickWeightedBucket(weightedBuckets, random);
+
+  if (!selectedBucket) {
+    return pickBucketLegacy(moves, config, random);
+  }
+
+  const selectedMoves = grouped.get(selectedBucket) || [];
+  if (selectedMoves.length > 0) {
+    return {
+      bucket: selectedBucket,
+      moves: selectedMoves,
+    };
+  }
+
+  const availableBuckets = getBucketOrder().filter((bucket) => (grouped.get(bucket) || []).length > 0);
+  const fallbackBucket = findClosestAvailableBucket(selectedBucket, availableBuckets);
+  if (!fallbackBucket) {
+    return null;
+  }
+
+  return {
+    bucket: fallbackBucket,
+    moves: grouped.get(fallbackBucket) || [],
+  };
+}
+
+export function pickRandomMoveFromBucket(
+  bucketSelection: BucketSelection,
+  random: RandomNumberGenerator = Math.random,
+): ClassifiedMove {
+  const randomMoveIndex = Math.floor(random() * bucketSelection.moves.length);
+  return bucketSelection.moves[randomMoveIndex];
+}
 
 /**
  * Pick a move based on bucket configuration (weighted random)
  */
 export function pickMove(
   moves: ClassifiedMove[], 
-  config: BucketConfig = DEFAULT_BUCKET_CONFIG
+  config: BucketConfig = DEFAULT_BUCKET_CONFIG,
+  random: RandomNumberGenerator = Math.random,
 ): PickedMoveResult | null {
-  if (moves.length === 0) return null;
-
-  const grouped = groupMovesByBucket(moves);
-  
-  // Build weighted bucket selection based on available moves
-  const availableBuckets: { bucket: MoveBucket; weight: number; moves: ClassifiedMove[] }[] = [];
-  
-  const bucketOrder: MoveBucket[] = ['best', 'great', 'excellent', 'good', 'inaccuracy', 'mistake', 'blunder'];
-  
-  for (const bucket of bucketOrder) {
-    const bucketMoves = grouped.get(bucket) || [];
-    const weight = config[bucket];
-    
-    if (bucketMoves.length > 0 && weight > 0) {
-      availableBuckets.push({ bucket, weight, moves: bucketMoves });
-    }
-  }
-
-  if (availableBuckets.length === 0) {
-    // Fallback: return the first (best) move
-    return {
-      move: moves[0],
-      bucket: moves[0].bucket,
-    };
-  }
-
-  // Calculate total weight
-  const totalWeight = availableBuckets.reduce((sum, b) => sum + b.weight, 0);
-  
-  if (totalWeight === 0) {
-    // All weights are zero, pick from best available
-    return {
-      move: availableBuckets[0].moves[0],
-      bucket: availableBuckets[0].bucket,
-    };
-  }
-
-  // Pick bucket using weighted random
-  const random = Math.random() * totalWeight;
-  let cumulative = 0;
-  let selectedBucket = availableBuckets[0];
-  
-  for (const entry of availableBuckets) {
-    cumulative += entry.weight;
-    if (random <= cumulative) {
-      selectedBucket = entry;
-      break;
-    }
-  }
-
-  // Pick random move from selected bucket
-  const bucketMoves = selectedBucket.moves;
-  const randomMoveIndex = Math.floor(Math.random() * bucketMoves.length);
-  const selectedMove = bucketMoves[randomMoveIndex];
+  const selectedBucket = pickBucketLegacy(moves, config, random);
+  if (!selectedBucket) return null;
+  const selectedMove = pickRandomMoveFromBucket(selectedBucket, random);
 
   return {
     move: selectedMove,

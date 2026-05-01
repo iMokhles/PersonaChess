@@ -6,25 +6,24 @@
 
 import React, { useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
-import { ChessBoardComponent, ConfigPanel, ControlPanel } from './components';
+import { ChessBoardComponent, ConfigPanel, ControlPanel, FeatureOptionsPanel } from './components';
 import { engineViewModel } from '../viewmodels';
+import { createDebugLogger } from '../shared/debug';
 import './App.css';
 
 // Fixed board size - fits within 750px container
 const BOARD_SIZE = 650;
+const logger = createDebugLogger('App');
 
 export const App: React.FC = observer(() => {
   // Initialize engine on mount
   useEffect(() => {
-    console.log('[App] Component mounted, initializing engine...');
-    
     const initEngine = async () => {
       try {
-        console.log('[App] Starting engine initialization...');
         await engineViewModel.initialize();
-        console.log('[App] Engine initialized successfully');
+        logger.debug('Engine initialized successfully');
       } catch (err) {
-        console.error('[App] Failed to initialize Stockfish:', err);
+        logger.error('Failed to initialize Stockfish:', err);
       }
     };
     
@@ -32,12 +31,10 @@ export const App: React.FC = observer(() => {
 
     // Cleanup on unmount
     return () => {
-      console.log('[App] Component unmounting, destroying engine...');
+      logger.debug('Component unmounting, destroying engine...');
       engineViewModel.destroy();
     };
   }, []);
-
-  console.log('[App] Rendering App component');
 
   return (
     <div className="app">
@@ -56,7 +53,10 @@ export const App: React.FC = observer(() => {
 
         <div className="controls-section">
           <ControlPanel />
-          <ConfigPanel />
+          <div className="settings-section">
+            <ConfigPanel />
+            <FeatureOptionsPanel />
+          </div>
         </div>
       </main>
 
