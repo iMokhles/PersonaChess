@@ -382,3 +382,156 @@ test('cache-hit indicator reflects whether analysis came from cache', async () =
   stockfishService.analyzePosition = originalAnalyze;
   stockfishService.configure = originalConfigure;
 });
+
+test('persona profiles save and load the current configuration snapshot', async () => {
+  localStorageMock.clear();
+
+  const { PersonaProfilesViewModel } = await import('../src/viewmodels');
+  const { DEFAULT_BUCKET_CONFIG } = await import('../src/engine/types');
+  const { DEFAULT_FEATURE_OPTIONS } = await import('../src/engine/featureOptions');
+
+  let appliedConfig: unknown = null;
+  let appliedFeatureOptions: unknown = null;
+  let appliedBrilliantSettings: unknown = null;
+  let appliedUi: unknown = null;
+
+  const profiles = new PersonaProfilesViewModel({
+    configViewModel: {
+      bucketConfig: {
+        ...DEFAULT_BUCKET_CONFIG,
+        best: 28,
+        great: 22,
+      },
+      currentPresetId: 'aggressive',
+      depth: 13,
+      multiPV: 7,
+      applyProfileSnapshot: (snapshot) => {
+        appliedConfig = snapshot;
+      },
+    },
+    featureOptionsViewModel: {
+      options: {
+        ...DEFAULT_FEATURE_OPTIONS,
+        useDeterministicRng: true,
+        useMoveAnalysisCache: false,
+        useBrilliantMoveBudget: true,
+      },
+      brilliantMovesPerGame: 3,
+      brilliantAllowedPhase: 'middlegame',
+      applyProfileSettings: (options, brilliant) => {
+        appliedFeatureOptions = options;
+        appliedBrilliantSettings = brilliant;
+      },
+    },
+    uiStateViewModel: {
+      themeMode: 'persona',
+      basicMode: false,
+      applyProfilePreferences: (preferences) => {
+        appliedUi = preferences;
+      },
+    },
+  });
+
+  profiles.setProfileNameDraft('Sharp Tactician');
+  assert.equal(profiles.saveCurrentProfile(), true);
+  assert.equal(profiles.profiles.length, 1);
+  assert.equal(profiles.profiles[0]?.name, 'Sharp Tactician');
+  assert.equal(profiles.profiles[0]?.settings.depth, 13);
+  assert.equal(profiles.profiles[0]?.settings.featureOptions.useDeterministicRng, true);
+  assert.equal(profiles.profiles[0]?.settings.brilliant.brilliantMovesPerGame, 3);
+  assert.equal(profiles.profiles[0]?.settings.ui.themeMode, 'persona');
+
+  assert.equal(profiles.loadSelectedProfile(), true);
+  assert.deepEqual(appliedConfig, {
+    bucketConfig: {
+      ...DEFAULT_BUCKET_CONFIG,
+      best: 28,
+      great: 22,
+    },
+    currentPresetId: 'aggressive',
+    depth: 13,
+    multiPV: 7,
+  });
+  assert.deepEqual(appliedFeatureOptions, {
+    ...DEFAULT_FEATURE_OPTIONS,
+    useDeterministicRng: true,
+    useMoveAnalysisCache: false,
+    useBrilliantMoveBudget: true,
+  });
+  assert.deepEqual(appliedBrilliantSettings, {
+    brilliantMovesPerGame: 3,
+    brilliantAllowedPhase: 'middlegame',
+  });
+  assert.deepEqual(appliedUi, {
+    themeMode: 'persona',
+    basicMode: false,
+  });
+});
+
+test('persona profile import validates JSON safely and deduplicates names', async () => {
+  localStorageMock.clear();
+
+  const { PersonaProfilesViewModel } = await import('../src/viewmodels');
+  const { DEFAULT_BUCKET_CONFIG } = await import('../src/engine/types');
+  const { DEFAULT_FEATURE_OPTIONS } = await import('../src/engine/featureOptions');
+
+  const profiles = new PersonaProfilesViewModel({
+    configViewModel: {
+      bucketConfig: { ...DEFAULT_BUCKET_CONFIG },
+      currentPresetId: 'medium',
+      depth: 8,
+      multiPV: 12,
+      applyProfileSnapshot: () => undefined,
+    },
+    featureOptionsViewModel: {
+      options: { ...DEFAULT_FEATURE_OPTIONS },
+      brilliantMovesPerGame: 0,
+      brilliantAllowedPhase: 'any',
+      applyProfileSettings: () => undefined,
+    },
+    uiStateViewModel: {
+      themeMode: 'dark',
+      basicMode: true,
+      applyProfilePreferences: () => undefined,
+    },
+  });
+
+  profiles.setProfileNameDraft('Balanced');
+  assert.equal(profiles.saveCurrentProfile(), true);
+
+  profiles.setExchangeJson('{bad json');
+  assert.equal(profiles.importProfileFromJson(), false);
+  assert.match(profiles.importError, /could not be parsed/i);
+
+  profiles.setExchangeJson(
+    JSON.stringify({
+      kind: 'personachess.persona-profile',
+      version: 1,
+      name: 'Balanced',
+      settings: {
+        bucketConfig: DEFAULT_BUCKET_CONFIG,
+        currentPresetId: 'hard',
+        depth: 15,
+        multiPV: 4,
+        featureOptions: {
+          ...DEFAULT_FEATURE_OPTIONS,
+          useDeterministicRng: true,
+        },
+        brilliant: {
+          brilliantMovesPerGame: 2,
+          brilliantAllowedPhase: 'endgame',
+        },
+        ui: {
+          themeMode: 'light',
+          basicMode: false,
+        },
+      },
+    }),
+  );
+
+  assert.equal(profiles.importProfileFromJson(), true);
+  assert.equal(profiles.profiles.length, 2);
+  assert.equal(profiles.profiles[0]?.name, 'Balanced 2');
+  assert.equal(profiles.profiles[0]?.settings.currentPresetId, 'hard');
+  assert.equal(profiles.profiles[0]?.settings.ui.themeMode, 'light');
+});

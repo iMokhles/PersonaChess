@@ -48,6 +48,11 @@
     "vite": "^5.4.21"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "chess.js": "^1.4.0",
     "electron-squirrel-startup": "^1.0.1",
     "mobx": "^6.15.0",

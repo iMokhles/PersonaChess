@@ -1,0 +1,272 @@
+.desktop-toolbar-shell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: var(--pc-bg-elevated);
+  border: 1px solid var(--pc-border);
+  box-shadow: var(--pc-shadow);
+  backdrop-filter: blur(18px);
+}
+
+.desktop-toolbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 220px;
+}
+
+.desktop-toolbar-brand-mark {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  font-size: 22px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--pc-accent) 28%, transparent), color-mix(in srgb, var(--pc-accent) 8%, transparent));
+  color: var(--pc-text);
+}
+
+.desktop-toolbar-brand-copy {
+  display: flex;
+  flex-direction: column;
+}
+
+.desktop-toolbar-brand-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.desktop-toolbar-brand-subtitle {
+  font-size: 11px;
+  color: var(--pc-text-muted);
+}
+
+.desktop-toolbar-groups {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.desktop-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-left: 10px;
+  border-left: 1px solid var(--pc-border);
+}
+
+.desktop-toolbar-group:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.desktop-toolbar-group-switch {
+  gap: 14px;
+}
+
+.desktop-toolbar-button {
+  border: 0;
+  border-radius: 12px;
+  min-height: 40px;
+  padding: 9px 13px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pc-text);
+  background: var(--pc-bg-muted);
+  transition: background 0.18s ease, transform 0.18s ease, opacity 0.18s ease, border-color 0.18s ease;
+  border: 1px solid transparent;
+}
+
+.desktop-toolbar-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pc-accent) 14%, var(--pc-bg-muted));
+  border-color: color-mix(in srgb, var(--pc-accent) 25%, transparent);
+  transform: translateY(-1px);
+}
+
+.desktop-toolbar-button.primary {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--pc-accent) 88%, white), var(--pc-accent-strong));
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--pc-accent) 30%, transparent);
+  color: #fff;
+}
+
+.desktop-toolbar-button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.desktop-toolbar-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.desktop-toolbar-switch-label {
+  font-size: 12px;
+  color: var(--pc-text-muted);
+  font-weight: 600;
+}
+
+.desktop-switch-root,
+.settings-switch-root {
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pc-text) 12%, transparent);
+  position: relative;
+  border: 1px solid var(--pc-border);
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06);
+  padding: 2px;
+}
+
+.desktop-switch-root[data-state='checked'],
+.settings-switch-root[data-state='checked'] {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--pc-accent) 88%, white), var(--pc-accent-strong));
+  border-color: color-mix(in srgb, var(--pc-accent) 55%, transparent);
+}
+
+.desktop-switch-root:focus-visible,
+.settings-switch-root:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pc-accent) 22%, transparent);
+}
+
+.desktop-switch-thumb,
+.settings-switch-thumb {
+  width: 20px;
+  height: 20px;
+  display: block;
+  background: color-mix(in srgb, var(--pc-text) 12%, white);
+  border-radius: 999px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+  transition: transform 0.18s ease, background 0.18s ease;
+  transform: translateX(0);
+  will-change: transform;
+}
+
+.desktop-switch-thumb[data-state='checked'],
+.settings-switch-thumb[data-state='checked'] {
+  transform: translateX(20px);
+}
+
+.desktop-switch-root[data-disabled],
+.settings-switch-root[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pc-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 5, 8, 0.72);
+  backdrop-filter: blur(6px);
+  z-index: 50;
+}
+
+.pc-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 60;
+  background: var(--pc-bg-elevated);
+  color: var(--pc-text);
+  border: 1px solid var(--pc-border);
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.48);
+}
+
+.pc-input-dialog {
+  width: min(720px, calc(100vw - 32px));
+  border-radius: 18px;
+  padding: 22px;
+}
+
+.pc-dialog-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.pc-dialog-description {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--pc-text-muted);
+}
+
+.pc-dialog-textarea {
+  width: 100%;
+  margin-top: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--pc-border);
+  background: var(--pc-bg-muted);
+  color: var(--pc-text);
+  padding: 14px;
+  resize: vertical;
+  min-height: 120px;
+}
+
+.pc-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.pc-button {
+  border: 0;
+  border-radius: 12px;
+  min-height: 40px;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+
+.pc-button-primary {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--pc-accent) 88%, white), var(--pc-accent-strong));
+  color: white;
+}
+
+.pc-button-secondary {
+  background: var(--pc-bg-muted);
+  color: var(--pc-text);
+}
+
+.pc-tooltip {
+  z-index: 90;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #02050a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f5f9ff;
+  font-size: 11px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.pc-tooltip-arrow {
+  fill: #02050a;
+}
+
+@media (max-width: 1180px) {
+  .desktop-toolbar-shell {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .desktop-toolbar-groups {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .desktop-toolbar-group {
+    border-left: 0;
+    padding-left: 0;
+  }
+}

@@ -15,6 +15,7 @@ export * from './brilliantTracking';
 export * from './featureOptions';
 export * from './gamePhase';
 export * from './gameSession';
+export * from './personaProfiles';
 export * from './personaBias';
 export * from './positionComplexity';
 export * from './random';

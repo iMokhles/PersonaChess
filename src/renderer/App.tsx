@@ -4,18 +4,38 @@
  * View layer - React component
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { ChessBoardComponent, ConfigPanel, ControlPanel, FeatureOptionsPanel } from './components';
-import { engineViewModel } from '../viewmodels';
+import {
+  ChessBoardComponent,
+  DesktopToolbar,
+  MoveHistoryPanel,
+  SettingsModal,
+  StatusStrip,
+} from './components';
+import { configViewModel, engineViewModel, uiStateViewModel } from '../viewmodels';
 import { createDebugLogger } from '../shared/debug';
 import './App.css';
 
-// Fixed board size - fits within 750px container
-const BOARD_SIZE = 650;
 const logger = createDebugLogger('App');
 
+function getResponsiveBoardSize(preferredSize: number, viewportWidth: number): number {
+  if (viewportWidth <= 0) {
+    return preferredSize;
+  }
+
+  const compactLayout = viewportWidth < 1180;
+  const sidePadding = compactLayout ? 84 : 500;
+  const maxAllowed = Math.max(360, viewportWidth - sidePadding);
+
+  return Math.min(preferredSize, maxAllowed);
+}
+
 export const App: React.FC = observer(() => {
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? 1440 : window.innerWidth,
+  );
+
   // Initialize engine on mount
   useEffect(() => {
     const initEngine = async () => {
@@ -36,36 +56,47 @@ export const App: React.FC = observer(() => {
     };
   }, []);
 
+  useEffect(() => {
+    const updateViewportWidth = () => {
+      setViewportWidth(window.innerWidth);
+    };
+
+    window.addEventListener('resize', updateViewportWidth);
+    return () => {
+      window.removeEventListener('resize', updateViewportWidth);
+    };
+  }, []);
+
+  const boardSize = useMemo(
+    () => getResponsiveBoardSize(uiStateViewModel.boardSizePx, viewportWidth),
+    [uiStateViewModel.boardSizePx, viewportWidth],
+  );
+  const personaAccent = uiStateViewModel.getPersonaAccentTone(configViewModel.activePersonaId);
+
   return (
-    <div className="app">
-      <header className="app-header">
-        <div className="logo">
-          <span className="logo-icon">♟</span>
-          <h1>PersonaChess</h1>
-        </div>
-        <p className="tagline">Human-like chess move generator</p>
+    <div
+      className="app-shell"
+      data-theme={uiStateViewModel.themeMode}
+      data-accent={personaAccent}
+    >
+      <header className="app-topbar">
+        <DesktopToolbar />
       </header>
 
-      <main className="app-main">
-        <div className="board-section">
-          <ChessBoardComponent boardWidth={BOARD_SIZE} />
-        </div>
-
-        <div className="controls-section">
-          <ControlPanel />
-          <div className="settings-section">
-            <ConfigPanel />
-            <FeatureOptionsPanel />
+      <main className="app-workspace">
+        <section className="app-board-column">
+          <div className="app-board-card" style={{ ['--board-size' as string]: `${boardSize}px` }}>
+            <ChessBoardComponent boardWidth={boardSize} />
           </div>
-        </div>
+          <StatusStrip />
+        </section>
+
+        <aside className="app-side-column">
+          <MoveHistoryPanel />
+        </aside>
       </main>
 
-      <footer className="app-footer">
-        <p>
-          PersonaChess uses Stockfish WASM for analysis • 
-          Moves are selected based on quality distribution
-        </p>
-      </footer>
+      <SettingsModal />
     </div>
   );
 });

@@ -70,9 +70,11 @@ export class BoardViewModel {
       setAutoPlay: action,
       setEnginePlaysFor: action,
       flipBoard: action,
+      setBoardFlipped: action,
       saveFenToHistory: action,
       loadFenFromHistory: action,
       toggleMoveArrows: action,
+      setShowMoveArrowsEnabled: action,
       setShowArrowsForSide: action,
       analyzeAllMoves: action,
       analyzePlayerMove: action,
@@ -512,6 +514,12 @@ export class BoardViewModel {
     logger.debug('Board flipped, orientation:', this.boardFlipped ? 'black' : 'white', 'Engine now plays for:', this.enginePlaysFor === 'w' ? 'White' : 'Black');
   }
 
+  setBoardFlipped(flipped: boolean): void {
+    if (this.boardFlipped !== flipped) {
+      this.flipBoard();
+    }
+  }
+
   /**
    * Save current FEN to localStorage history
    */
@@ -660,6 +668,12 @@ export class BoardViewModel {
       // Clear analysis when arrows are disabled to free memory
       this._analyzedLegalMoves = {};
       this.analyzedLegalMovesFen = null;
+    }
+  }
+
+  setShowMoveArrowsEnabled(enabled: boolean): void {
+    if (this.showMoveArrows !== enabled) {
+      this.toggleMoveArrows();
     }
   }
 
@@ -1113,6 +1127,23 @@ export class BoardViewModel {
    */
   get canRedo(): boolean {
     return this.redoStack.length > 0;
+  }
+
+  get moveHistoryRows(): Array<{ moveNumber: number; white: Move | null; black: Move | null }> {
+    const rows: Array<{ moveNumber: number; white: Move | null; black: Move | null }> = [];
+
+    for (let index = 0; index < this.history.length; index += 2) {
+      const whiteMove = this.history[index] ?? null;
+      const blackMove = this.history[index + 1] ?? null;
+      const moveNumber = whiteMove?.moveNumber ?? blackMove?.moveNumber ?? rows.length + 1;
+      rows.push({
+        moveNumber,
+        white: whiteMove,
+        black: blackMove,
+      });
+    }
+
+    return rows;
   }
 
   get debugSessionId(): string {

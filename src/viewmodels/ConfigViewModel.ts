@@ -27,6 +27,7 @@ export class ConfigViewModel {
     makeAutoObservable(this, {
       setBucketValue: action,
       setBucketConfig: action,
+      applyProfileSnapshot: action,
       applyPreset: action,
       resetToDefaults: action,
       normalizeConfig: action,
@@ -73,6 +74,18 @@ export class ConfigViewModel {
    */
   setBucketConfig(config: BucketConfig): void {
     this.bucketConfig = { ...config };
+  }
+
+  applyProfileSnapshot(snapshot: {
+    bucketConfig: BucketConfig;
+    currentPresetId: MoveQualityPresetId | null;
+    depth: number;
+    multiPV: number;
+  }): void {
+    this.bucketConfig = { ...snapshot.bucketConfig };
+    this.currentPresetId = snapshot.currentPresetId;
+    this.depth = Math.max(1, Math.min(30, snapshot.depth));
+    this.multiPV = Math.max(1, Math.min(20, snapshot.multiPV));
   }
 
   /**
@@ -135,6 +148,18 @@ export class ConfigViewModel {
    */
   get validationState(): { valid: boolean; total: number } {
     return validateBucketConfig(this.bucketConfig);
+  }
+
+  get activePersonaId(): MoveQualityPresetId | null {
+    return this.currentPresetId;
+  }
+
+  get activePersonaLabel(): string {
+    if (this.currentPresetId === null) {
+      return 'Custom';
+    }
+
+    return MOVE_QUALITY_PRESETS.find((preset) => preset.id === this.currentPresetId)?.label ?? 'Custom';
   }
 
   private restoreFromStorage(): void {

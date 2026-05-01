@@ -28,6 +28,7 @@ export class FeatureOptionsViewModel {
     makeAutoObservable(this, {
       setOption: action,
       setOptions: action,
+      applyProfileSettings: action,
       setBrilliantMovesPerGame: action,
       setBrilliantAllowedPhase: action,
       reconcileBrilliantTracking: action,
@@ -69,6 +70,29 @@ export class FeatureOptionsViewModel {
       ...this.options,
       ...options,
     });
+  }
+
+  applyProfileSettings(
+    options: Partial<FeatureOptions>,
+    brilliantSettings: Partial<Pick<BrilliantMoveBudgetConfig, 'brilliantMovesPerGame' | 'brilliantAllowedPhase'>>,
+  ): void {
+    this.options = mergeFeatureOptions({
+      ...this.options,
+      ...options,
+    });
+    this.brilliantConfig = {
+      ...this.brilliantConfig,
+      brilliantMovesPerGame: brilliantSettings.brilliantMovesPerGame ?? this.brilliantConfig.brilliantMovesPerGame,
+      brilliantAllowedPhase: brilliantSettings.brilliantAllowedPhase ?? this.brilliantConfig.brilliantAllowedPhase,
+    };
+
+    if (this.brilliantConfig.brilliantUsedCount > this.brilliantConfig.brilliantMovesPerGame) {
+      this.brilliantConfig = {
+        ...this.brilliantConfig,
+        brilliantUsedCount: this.brilliantConfig.brilliantMovesPerGame,
+        brilliantMoveNumbers: this.brilliantConfig.brilliantMoveNumbers.slice(0, this.brilliantConfig.brilliantMovesPerGame),
+      };
+    }
   }
 
   setBrilliantMovesPerGame(value: BrilliantMovesPerGame): void {
