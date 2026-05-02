@@ -1,19 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
-import { boardViewModel, engineViewModel } from '../../viewmodels';
+import { boardViewModel } from '../../viewmodels';
 import { DISPLAY_BUCKET_COLORS } from '../../engine/types';
 import './MoveHistoryPanel.css';
-
-const engineBusyForBoard = (): boolean =>
-  boardViewModel.isThinking
-  || boardViewModel.isAnalyzingMoves
-  || engineViewModel.isMoveLaneBusy;
 
 export const MoveHistoryPanel: React.FC = observer(() => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const latestMove = boardViewModel.history[boardViewModel.history.length - 1] ?? null;
   const latestFeedback = boardViewModel.recentMoveFeedback;
-  const busy = engineBusyForBoard();
   const whiteWinPct = boardViewModel.winChanceWhitePercent;
   const blackWinPct = 100 - whiteWinPct;
 
@@ -37,18 +31,6 @@ export const MoveHistoryPanel: React.FC = observer(() => {
           <p>Current line, grouped by turn for quick review.</p>
         </div>
         <span className="move-history-count">{boardViewModel.history.length} ply</span>
-      </div>
-
-      <div className="move-history-toolbar">
-        <button
-          type="button"
-          className="move-history-flip-button"
-          onClick={() => boardViewModel.flipBoard()}
-          disabled={busy}
-          title={busy ? 'Wait for the engine to finish' : 'Flip board and swap engine side (same as Settings)'}
-        >
-          Flip board
-        </button>
       </div>
 
       <div
@@ -98,8 +80,8 @@ export const MoveHistoryPanel: React.FC = observer(() => {
             {boardViewModel.moveHistoryRows.map((row) => {
               const isLatestWhite = latestMove?.san === row.white?.san && latestMove?.color === row.white?.color;
               const isLatestBlack = latestMove?.san === row.black?.san && latestMove?.color === row.black?.color;
-              const isBrilliantWhite = isLatestWhite && latestFeedback?.san === row.white?.san && latestFeedback.isBrilliant;
-              const isBrilliantBlack = isLatestBlack && latestFeedback?.san === row.black?.san && latestFeedback.isBrilliant;
+              const isBrilliantWhite = isLatestWhite && latestFeedback?.san === row.white?.san && Boolean(latestFeedback?.isBrilliant);
+              const isBrilliantBlack = isLatestBlack && latestFeedback?.san === row.black?.san && Boolean(latestFeedback?.isBrilliant);
 
               const whiteQualityColor =
                 row.whiteQualityBucket && row.whiteQualityLabel !== 'Brilliant'

@@ -1038,7 +1038,7 @@ export class BoardViewModel {
               bucket: analyzedMove.bucket,
               silent: true,
             });
-            this.updateLastAnnotation({
+            this.updateAnnotationByUci(moveUCI, {
               bucket: analyzedMove.bucket,
               evalLoss: analyzedMove.evalLoss,
               evaluation: analyzedMove.evaluation,
@@ -1058,7 +1058,7 @@ export class BoardViewModel {
                 bucket: "fallback",
                 silent: true,
               });
-              this.updateLastAnnotation({ bucket: "fallback" });
+              this.updateAnnotationByUci(moveUCI, { bucket: "fallback" });
             } else {
               this.lastPlayerMoveQuality = "good";
               this.statusMessage = `You played: ${move.san} (Good)`;
@@ -1070,7 +1070,7 @@ export class BoardViewModel {
                 bucket: "good",
                 silent: true,
               });
-              this.updateLastAnnotation({ bucket: "good" });
+              this.updateAnnotationByUci(moveUCI, { bucket: "good" });
             }
           });
         }
@@ -1888,6 +1888,22 @@ export class BoardViewModel {
     const lastIndex = this.historyAnnotations.length - 1;
     this.historyAnnotations[lastIndex] = {
       ...this.historyAnnotations[lastIndex],
+      ...partial,
+    };
+    this.saveFenToHistory();
+  }
+
+  /** Patch the annotation for a specific ply (e.g. player move) — not always the last after auto-play. */
+  private updateAnnotationByUci(
+    uci: string,
+    partial: Partial<MoveAnnotation>,
+  ): void {
+    const idx = this.historyAnnotations.findIndex((a) => a.uci === uci);
+    if (idx < 0) {
+      return;
+    }
+    this.historyAnnotations[idx] = {
+      ...this.historyAnnotations[idx],
       ...partial,
     };
     this.saveFenToHistory();

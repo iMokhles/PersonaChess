@@ -90,3 +90,27 @@
   opacity: 0.48;
   cursor: not-allowed;
 }
+
+.quick-controls-flip {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  min-height: 38px;
+  padding: 9px 10px;
+  background: var(--pc-bg-muted);
+  color: var(--pc-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease, opacity 180ms ease;
+}
+
+.quick-controls-flip:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--pc-accent) 22%, transparent);
+}
+
+.quick-controls-flip:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}

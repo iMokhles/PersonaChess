@@ -30,7 +30,8 @@ function getResponsiveBoardSize(preferredSize: number, viewportWidth: number): n
   }
 
   const compactLayout = viewportWidth < 1180;
-  const sidePadding = compactLayout ? 84 : 500;
+  /* Reserve space for history column + quick controls + gaps (desktop). */
+  const sidePadding = compactLayout ? 84 : 660;
   const maxAllowed = Math.max(360, viewportWidth - sidePadding);
 
   return Math.min(preferredSize, maxAllowed);
@@ -196,6 +197,10 @@ export const App: React.FC = observer(() => {
       </header>
 
       <main className="app-workspace">
+        <aside className="app-history-column">
+          <MoveHistoryPanel />
+        </aside>
+
         <section className="app-board-column">
           <div className="app-board-card" style={{ ['--board-size' as string]: `${boardSize}px` }}>
             <ChessBoardComponent boardWidth={boardSize} />
@@ -205,10 +210,7 @@ export const App: React.FC = observer(() => {
         </section>
 
         <aside className="app-side-column">
-          <div className="app-side-stack">
-            <QuickControlsPanel />
-            <MoveHistoryPanel />
-          </div>
+          <QuickControlsPanel />
         </aside>
       </main>
 

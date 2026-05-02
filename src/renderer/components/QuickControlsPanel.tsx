@@ -20,6 +20,22 @@ export const QuickControlsPanel: React.FC = observer(() => {
 
       <div className="quick-controls-section">
         <div className="quick-controls-label-row">
+          <span className="quick-controls-label">Board</span>
+          <strong>{boardViewModel.boardFlipped ? 'Black at bottom' : 'White at bottom'}</strong>
+        </div>
+        <button
+          type="button"
+          className="quick-controls-flip"
+          disabled={busy}
+          onClick={() => boardViewModel.flipBoard()}
+          title={busy ? 'Wait for the engine to finish' : 'Flip board orientation and swap engine side (same as Settings)'}
+        >
+          Flip board
+        </button>
+      </div>
+
+      <div className="quick-controls-section">
+        <div className="quick-controls-label-row">
           <span className="quick-controls-label">Engine Side</span>
           <strong>{boardViewModel.autoPlayCurrentSideLabel}</strong>
         </div>

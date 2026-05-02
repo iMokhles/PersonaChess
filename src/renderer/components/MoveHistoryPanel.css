@@ -35,33 +35,6 @@
   color: var(--pc-text-muted);
 }
 
-.move-history-toolbar {
-  margin-top: 12px;
-}
-
-.move-history-flip-button {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--pc-border);
-  background: var(--pc-bg-muted);
-  color: var(--pc-text);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
-}
-
-.move-history-flip-button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--pc-accent-soft) 55%, var(--pc-bg-muted));
-  border-color: color-mix(in srgb, var(--pc-accent) 22%, var(--pc-border));
-}
-
-.move-history-flip-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .move-history-win-meter {
   margin-top: 12px;
   padding: 10px 12px;
