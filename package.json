@@ -1,7 +1,7 @@
 {
   "name": "personachess",
   "productName": "PersonaChess",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Human-like chess move generator using Stockfish analysis",
   "main": ".vite/build/main.js",
   "private": true,

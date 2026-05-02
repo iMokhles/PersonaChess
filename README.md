@@ -1,85 +1,173 @@
 # PersonaChess
 
-PersonaChess is an Electron desktop chess app that uses Stockfish for analysis, then deliberately chooses moves through configurable human-like quality buckets instead of always playing the top engine line.
+PersonaChess is a desktop chess application built with Electron, React, TypeScript, and MobX. It uses Stockfish for analysis, but instead of always choosing the top move, it can deliberately play through configurable human-like quality buckets to create more varied and personality-driven games.
 
-![PersonaChess Screenshot](./screenshots/screenshot1.png)
+## Screenshots
 
-## What It Does
+### Main Board
 
-- Play on an interactive board with drag/drop or click-to-move
-- Ask the engine to play one move manually or let it auto-play for White or Black
-- Load positions from `FEN`, games/lines from `PGN`, or built-in openings
-- Tune how often the engine plays `Best`, `Great`, `Excellent`, `Good`, `Inaccuracy`, `Mistake`, and `Blunder` moves
-- Enable optional advanced behaviors with independent feature toggles
-- Persist local board state, engine configuration, and brilliant-move session data when enabled
+![PersonaChess Main Window](./screenshots/screenshot1.png)
 
-## Personas And Presets
+### Settings Modal
 
-Move quality presets shape the overall style of play:
+![PersonaChess Settings Modal](./screenshots/screenshot2.png)
 
-- `Low`: easier play, more inaccuracies and mistakes
-- `Medium`: balanced default
-- `Hard`: stronger play with mostly best/great moves
-- `Super Hard`: near-engine play
-- `Aggressive`: more risky and tactical distributions
+## Highlights
 
-These presets control bucket percentages only. Optional advanced toggles can further influence selection.
+- Interactive desktop chess board with drag-and-drop and click-to-move
+- Manual engine move solving or automatic engine play for White or Black
+- Personality presets that bias move quality distribution
+- Independent advanced feature toggles for cache, deterministic RNG, complexity, bias, brilliant-move budgeting, and more
+- Game Setup modal for openings, tactical positions, endgames, custom FEN, and custom PGN
+- Saved persona profiles with JSON import and export
+- Session summaries, recent game analytics, and PGN / JSON export
+- Local persistence for board state, engine configuration, UI preferences, and recent completed games
 
-## Advanced Feature Flags
+## How PersonaChess Works
 
-All advanced options are independent. You can mix old and new behavior safely.
+PersonaChess separates analysis from move choice:
+
+1. Stockfish analyzes the current position.
+2. Candidate moves are classified into quality buckets such as `Best`, `Great`, `Good`, `Inaccuracy`, `Mistake`, and `Blunder`.
+3. A bucket is selected from the active configuration.
+4. A legal move is chosen from that bucket and played.
+
+This lets the app feel much less robotic than a traditional "always best move" engine opponent.
+
+## Core Features
+
+### Play
+
+- Interactive board controls
+- Undo / redo
+- Reset board
+- Load FEN
+- Load PGN
+- Export current PGN through the summary flow
+
+### Personas
+
+- `Low`
+- `Medium`
+- `Hard`
+- `Super Hard`
+- `Aggressive`
+
+These presets shape the move-quality distribution. Optional advanced features can layer on additional behavior without replacing the base preset system.
+
+### Game Setup
+
+- Built-in openings
+- Tactical positions
+- Endgames
+- Custom FEN
+- Custom PGN
+
+### Advanced Systems
+
+- Deterministic RNG
+- Analysis cache
+- Improved move classification
+- Position complexity adjustments
+- Persona behavior bias
+- Human delay simulation
+- Brilliant move budget
+
+### Gameplay Polish
+
+- Desktop sound cues for move events
+- Move feedback toast
+- Autoplay countdown and pause / resume
+- Keyboard shortcuts
+- Recent game summaries and analytics
+
+## Feature Flags
+
+All advanced options are independent, so old and new behaviors can be mixed safely.
 
 - `securityDevToolsOnly`
-  Limits automatic DevTools opening to development builds only.
+  Restricts automatic DevTools opening to development builds.
 - `persistEngineConfig`
-  Persists depth, MultiPV, preset, bucket percentages, feature options, session board state, and brilliant tracking.
+  Persists engine settings, feature options, UI preferences, and session data.
 - `useDeterministicRng`
-  Uses seeded move selection for reproducible sessions.
+  Uses seeded random selection for reproducible sessions.
 - `useMoveAnalysisCache`
-  Reuses Stockfish analysis by `FEN + depth + MultiPV`.
+  Reuses analysis for the same `FEN + depth + MultiPV`.
 - `useImprovedMoveClassification`
-  Uses smarter fallback logic and keeps unknown moves out of `Good` by default.
+  Keeps unknown moves out of `Good` by default and uses smarter fallback logic.
 - `usePositionComplexity`
-  Adjusts move-quality weights slightly based on how sharp the position is.
+  Slightly adjusts bucket weights based on position sharpness.
 - `usePersonaBehaviorBias`
-  Adds lightweight aggressive/safe/tactical preferences on top of bucket choice.
+  Adds lightweight aggressive / safe move preferences on top of bucket selection.
 - `useHumanDelaySimulation`
-  Adds persona/complexity-based delay before engine auto-play moves.
+  Delays autoplay moves based on complexity, persona, and chosen move quality.
 - `useBrilliantMoveBudget`
-  Allows a per-game budget of tactical “brilliant” moves with phase restrictions.
+  Reserves a small tactical brilliant-move budget per game.
 
-## Brilliant Move Budget
+## Saved Profiles
 
-When enabled, PersonaChess can reserve a fixed number of brilliant moves per game.
+PersonaChess supports saved persona profiles that can include:
 
-- `brilliantMovesPerGame`: `0` to `4`
-- `brilliantAllowedPhase`: `opening`, `middlegame`, `endgame`, or `any`
-- Tactical preference is based on checks, captures, promotions, and similar sharp traits
-- Budget is consumed only after a brilliant move is actually played
-- Undo/redo and restored sessions keep brilliant tracking consistent
+- Bucket percentages
+- Active preset
+- Depth and MultiPV
+- Feature options
+- Brilliant-move settings
+- Theme and basic UI mode
+
+Profiles can be:
+
+- Saved
+- Loaded
+- Renamed
+- Duplicated
+- Deleted
+- Exported as JSON
+- Imported from validated JSON
+
+## Game Analytics
+
+Each completed game can generate a summary including:
+
+- Move quality counts
+- Brilliant moves
+- Inaccuracies, mistakes, and blunders
+- Average eval loss
+- Average move delay
+- Complexity distribution
+- Setup used
+- Persona used
+- Autoplay duration
+- Recent games history
+
+The Game Summary modal also supports:
+
+- JSON export
+- PGN export
+- Recent game browsing
 
 ## Architecture
 
-PersonaChess follows MVVM:
+PersonaChess follows an MVVM structure:
 
 - `src/engine`
-  Pure TypeScript logic for Stockfish integration, move classification, picking, caching, RNG, complexity, persona bias, brilliant selection, and supporting helpers
+  Pure TypeScript engine and model helpers
 - `src/viewmodels`
-  MobX stores coordinating board state, engine state, configuration, feature options, and debug state
+  MobX stores coordinating game state, engine state, UI state, setup flow, profiles, and analytics
 - `src/renderer`
-  React components that render the UI and call ViewModel actions
+  React components and desktop UI presentation
 - `src/main.ts`
-  Electron main process with production hardening and Forge/Vite bootstrapping
+  Electron main process and production hardening
 - `src/preload.ts`
-  Minimal context-bridge surface for syncing feature options to the main process
+  Minimal preload bridge
 
 ## Requirements
 
 - Node.js 18 or newer recommended
 - npm
-- macOS, Windows, or Linux for local Electron builds
+- macOS, Windows, or Linux for local Electron development and packaging
 
-## Setup
+## Installation
 
 ```bash
 npm install
@@ -87,28 +175,24 @@ npm install
 
 The `postinstall` step copies `stockfish.js` and `stockfish.wasm` into `public/`.
 
-## Run In Development
+## Development
+
+Run the desktop app locally:
 
 ```bash
 npm start
 ```
 
-Notes:
-
-- The app runs with Electron Forge + Vite
-- DevTools can be opened in development when the security option allows it
-- A debug logging toggle is available in the app during development
-
-## Tests And Lint
+## Quality Checks
 
 ```bash
 npm test
 npm run lint
 ```
 
-## Production Packaging
+## Packaging
 
-Package the app locally:
+Create a packaged local build:
 
 ```bash
 npm run package
@@ -120,62 +204,25 @@ Create a platform distributable:
 npm run make
 ```
 
-Current packaging metadata:
+## Electron Security Notes
 
-- App name: `PersonaChess`
-- Bundle identifier: `com.imokhles.personachess`
-- macOS category: `Games`
+The app is configured with a hardened renderer posture:
+
+- `contextIsolation: true`
+- `sandbox: true`
+- `nodeIntegration: false`
+- minimal preload bridge
+- blocked navigation and popup creation
+- denied permission prompts
+
+DevTools are intended for development only, controlled by the relevant feature option.
+
+## Current Build Metadata
+
+- Product name: `PersonaChess`
+- Package name: `personachess`
 - App icon: `assets/icon.icns`
-
-## Release Notes
-
-This release-readiness pass includes:
-
-- DevTools restricted to development builds only
-- Hardened Electron window settings with `contextIsolation`, `sandbox`, `nodeIntegration: false`, blocked navigation, and denied permission prompts
-- Minimal preload bridge
-- Reduced runtime logging noise behind a debug toggle
-- Cache/source visibility and clearer analysis state in the UI
-- Persisted move annotations for stable brilliant undo/redo after restart
-
-## Troubleshooting
-
-### The app opens but the engine never starts
-
-- Re-run `npm install` so `postinstall` recopies `stockfish.js` and `stockfish.wasm`
-- Confirm both files exist in `public/`
-- Check the in-app engine error message in the control panel
-
-### Stockfish or WASM fails after packaging
-
-- Verify `public/stockfish.js` and `public/stockfish.wasm` are included in the packaged app resources
-- Rebuild with `npm run package`
-- If you changed asset paths, make sure the worker still loads `/stockfish.js`
-
-### Packaging fails on your platform
-
-- `npm run package` is the easiest smoke check for a local release
-- `npm run make` depends on the maker available for your platform
-- On macOS, the default distributable is a `.zip`
-- Linux makers may require additional native packaging tools when run on Linux
-
-### The engine feels noisy in the terminal
-
-- Use the in-app `Debug logs` toggle in development to turn verbose logs on or off
-- In packaged builds, debug logs stay off by default
-
-### Persisted state feels stale
-
-- Disable and re-enable `Persist Engine Configuration` to clear persisted advanced settings
-- Reset the board or load a new `FEN`/`PGN` to start a fresh game session
-
-## Scripts
-
-- `npm start`: run the Electron app in development
-- `npm run package`: build a local packaged app
-- `npm run make`: create a platform distributable
-- `npm test`: run the local regression tests
-- `npm run lint`: run ESLint
+- Engine package: `stockfish.js`
 
 ## Project Structure
 
@@ -191,7 +238,46 @@ public/
   stockfish.wasm
 assets/
   icon.svg
+  icon.png
   icon.icns
+screenshots/
+  screenshot1.png
+  screenshot2.png
 tests/
 ```
 
+## Scripts
+
+- `npm start` - run the Electron app in development
+- `npm run package` - build a packaged local app
+- `npm run make` - create a platform distributable
+- `npm test` - run regression tests
+- `npm run lint` - run ESLint
+
+## Troubleshooting
+
+### Engine does not start
+
+- Re-run `npm install`
+- Confirm `public/stockfish.js` and `public/stockfish.wasm` exist
+- Check the in-app engine status and any visible error message
+
+### Packaged build cannot load Stockfish
+
+- Verify both engine files are present in packaged resources
+- Rebuild with `npm run package`
+- If asset paths were changed, confirm the worker still resolves `/stockfish.js`
+
+### Persisted state feels stale
+
+- Disable and re-enable persisted engine configuration
+- Reset the board or load a new setup to start a fresh session
+
+### Packaging fails on your machine
+
+- `npm run package` is the fastest local smoke test
+- `npm run make` may require platform-specific native tooling depending on the target
+
+## License
+
+MIT
