@@ -31,6 +31,10 @@ import {
 } from "../engine/types";
 import { calculateHumanDelayMs } from "../engine/personaBias";
 import { mapLegalMovesToBuckets } from "../engine/moveClassifier";
+import {
+  evalFromSideToMoveToWhitePositive,
+  whitePositiveEvalToWinChances,
+} from "../engine/winProbability";
 import { uiStateViewModel } from "./UiStateViewModel";
 
 const logger = createDebugLogger("BoardViewModel");
@@ -75,6 +79,10 @@ export class BoardViewModel {
   recentMoveFeedback: RecentMoveFeedback | null = null;
   autoPlayAccumulatedMs = 0;
   autoPlayLastResumedAt: number | null = null;
+  /** Approximate win share from engine eval (0–100); updates after each position change. */
+  winChanceWhitePercent = 50;
+  winChanceBlackPercent = 50;
+  winChancesLoading = false;
 
   // Store analyzed moves as an object for MobX observability
   private _analyzedLegalMoves: Record<string, DisplayMoveBucket> = {};
@@ -85,6 +93,8 @@ export class BoardViewModel {
   private _analysisTimeout: NodeJS.Timeout | null = null; // Timeout for debouncing move analysis
   private _autoPlayTimeout: NodeJS.Timeout | null = null;
   private _playerMoveAnalysisTimeout: NodeJS.Timeout | null = null;
+  private _winChanceTimeout: NodeJS.Timeout | null = null;
+  private _winChanceRequestSeq = 0;
   private readonly FEN_STORAGE_KEY = "personachess_current_fen";
   private readonly FEN_HISTORY_KEY = "personachess_fen_history";
   private readonly BOARD_STATE_STORAGE_KEY = "personachess_board_state";
@@ -681,6 +691,8 @@ export class BoardViewModel {
         });
       }, 300); // 300ms debounce
     }
+
+    this.scheduleWinChancesRefresh();
   }
 
   /**
@@ -1026,6 +1038,11 @@ export class BoardViewModel {
               bucket: analyzedMove.bucket,
               silent: true,
             });
+            this.updateLastAnnotation({
+              bucket: analyzedMove.bucket,
+              evalLoss: analyzedMove.evalLoss,
+              evaluation: analyzedMove.evaluation,
+            });
           });
           logger.debug("Player move quality:", analyzedMove.bucket);
         } else {
@@ -1041,6 +1058,7 @@ export class BoardViewModel {
                 bucket: "fallback",
                 silent: true,
               });
+              this.updateLastAnnotation({ bucket: "fallback" });
             } else {
               this.lastPlayerMoveQuality = "good";
               this.statusMessage = `You played: ${move.san} (Good)`;
@@ -1052,6 +1070,7 @@ export class BoardViewModel {
                 bucket: "good",
                 silent: true,
               });
+              this.updateLastAnnotation({ bucket: "good" });
             }
           });
         }
@@ -1454,22 +1473,33 @@ export class BoardViewModel {
     moveNumber: number;
     white: Move | null;
     black: Move | null;
+    whiteQualityLabel: string | null;
+    blackQualityLabel: string | null;
+    whiteQualityBucket: DisplayMoveBucket | null;
+    blackQualityBucket: DisplayMoveBucket | null;
   }> {
     const rows: Array<{
       moveNumber: number;
       white: Move | null;
       black: Move | null;
+      whiteQualityLabel: string | null;
+      blackQualityLabel: string | null;
+      whiteQualityBucket: DisplayMoveBucket | null;
+      blackQualityBucket: DisplayMoveBucket | null;
     }> = [];
 
     for (let index = 0; index < this.history.length; index += 2) {
       const whiteMove = this.history[index] ?? null;
       const blackMove = this.history[index + 1] ?? null;
-      const moveNumber =
-        whiteMove?.moveNumber ?? blackMove?.moveNumber ?? rows.length + 1;
+      const moveNumber = (index >> 1) + 1;
       rows.push({
         moveNumber,
         white: whiteMove,
         black: blackMove,
+        whiteQualityLabel: this.qualityLabelForPly(index),
+        blackQualityLabel: this.qualityLabelForPly(index + 1),
+        whiteQualityBucket: this.qualityBucketForPly(index),
+        blackQualityBucket: this.qualityBucketForPly(index + 1),
       });
     }
 
@@ -1683,6 +1713,145 @@ export class BoardViewModel {
     this.lastPlayerMoveQuality = null;
     this._analyzedLegalMoves = {};
     this.analyzedLegalMovesFen = null;
+    this.clearWinChancesSchedule();
+    this._winChanceRequestSeq += 1;
+    this.winChanceWhitePercent = 50;
+    this.winChanceBlackPercent = 50;
+    this.winChancesLoading = false;
+  }
+
+  private qualityLabelForPly(plyIndex: number): string | null {
+    const annotation = this.historyAnnotations[plyIndex];
+    if (!annotation) {
+      return null;
+    }
+    if (annotation.consumedBrilliant) {
+      return "Brilliant";
+    }
+    if (annotation.bucket) {
+      if (Object.prototype.hasOwnProperty.call(DISPLAY_BUCKET_LABELS, annotation.bucket)) {
+        return DISPLAY_BUCKET_LABELS[annotation.bucket as DisplayMoveBucket];
+      }
+      return annotation.bucket;
+    }
+    return null;
+  }
+
+  private qualityBucketForPly(plyIndex: number): DisplayMoveBucket | null {
+    const annotation = this.historyAnnotations[plyIndex];
+    if (!annotation?.bucket) {
+      return null;
+    }
+    if (Object.prototype.hasOwnProperty.call(DISPLAY_BUCKET_LABELS, annotation.bucket)) {
+      return annotation.bucket as DisplayMoveBucket;
+    }
+    return null;
+  }
+
+  private clearWinChancesSchedule(): void {
+    if (this._winChanceTimeout) {
+      clearTimeout(this._winChanceTimeout);
+      this._winChanceTimeout = null;
+    }
+  }
+
+  private scheduleWinChancesRefresh(): void {
+    this.clearWinChancesSchedule();
+    this._winChanceTimeout = setTimeout(() => {
+      this._winChanceTimeout = null;
+      void this.refreshWinChancesFromEngine();
+    }, 380);
+  }
+
+  private async refreshWinChancesFromEngine(): Promise<void> {
+    const requestId = ++this._winChanceRequestSeq;
+    const fenSnapshot = this.fen;
+    const turnSnapshot = this.chess.turn();
+
+    runInAction(() => {
+      this.winChancesLoading = true;
+    });
+
+    try {
+      if (this.isCheckmate) {
+        const whiteWins = turnSnapshot === "b";
+        runInAction(() => {
+          if (requestId !== this._winChanceRequestSeq) {
+            return;
+          }
+          this.winChanceWhitePercent = whiteWins ? 100 : 0;
+          this.winChanceBlackPercent = whiteWins ? 0 : 100;
+          this.winChancesLoading = false;
+        });
+        return;
+      }
+
+      if (this.isGameOver) {
+        runInAction(() => {
+          if (requestId !== this._winChanceRequestSeq) {
+            return;
+          }
+          this.winChanceWhitePercent = 50;
+          this.winChanceBlackPercent = 50;
+          this.winChancesLoading = false;
+        });
+        return;
+      }
+
+      if (!engineViewModel.isInitialized) {
+        runInAction(() => {
+          if (requestId !== this._winChanceRequestSeq) {
+            return;
+          }
+          this.winChanceWhitePercent = 50;
+          this.winChanceBlackPercent = 50;
+          this.winChancesLoading = false;
+        });
+        return;
+      }
+
+      const depth = Math.min(14, Math.max(8, configViewModel.depth));
+      const analysis = await engineViewModel.analyzePosition(
+        fenSnapshot,
+        depth,
+        1,
+        "background",
+      );
+
+      if (requestId !== this._winChanceRequestSeq) {
+        return;
+      }
+
+      if (
+        analysis.ignored ||
+        !canApplyAnalyzedMove(this.fen, analysis.analyzedFen) ||
+        analysis.moves.length === 0
+      ) {
+        runInAction(() => {
+          this.winChancesLoading = false;
+        });
+        return;
+      }
+
+      const best = analysis.moves[0];
+      const whitePositive = evalFromSideToMoveToWhitePositive(
+        best.evaluation,
+        turnSnapshot,
+      );
+      const { white, black } = whitePositiveEvalToWinChances(whitePositive);
+      runInAction(() => {
+        this.winChanceWhitePercent = white;
+        this.winChanceBlackPercent = black;
+        this.winChancesLoading = false;
+      });
+    } catch {
+      runInAction(() => {
+        if (requestId !== this._winChanceRequestSeq) {
+          return;
+        }
+        this.winChancesLoading = false;
+      });
+    }
   }
 
   private syncAutoPlaySchedule(): void {
