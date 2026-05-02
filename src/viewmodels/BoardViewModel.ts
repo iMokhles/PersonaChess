@@ -228,7 +228,7 @@ export class BoardViewModel {
       this.statusMessage = 'Position loaded';
       this.lastSkippedEngineMoveMessage = null;
       this.recentMoveFeedback = null;
-      engineViewModel.reset();
+      engineViewModel.restart();
       logger.debug('FEN loaded successfully');
       return true;
     } catch (err) {
@@ -274,7 +274,7 @@ export class BoardViewModel {
       this.statusMessage = 'PGN loaded';
       this.lastSkippedEngineMoveMessage = null;
       this.recentMoveFeedback = null;
-      engineViewModel.reset();
+      engineViewModel.restart();
       return true;
     } catch (err) {
       logger.error('loadPgn error:', err);
@@ -555,7 +555,7 @@ export class BoardViewModel {
     this.statusMessage = 'Board reset';
     this.lastSkippedEngineMoveMessage = null;
     this.recentMoveFeedback = null;
-    engineViewModel.reset();
+    engineViewModel.restart();
     logger.debug('Board reset, new FEN:', this.fen);
   }
 

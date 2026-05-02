@@ -66,6 +66,10 @@ export class EngineCoordinator {
     this.analysisService.destroy();
   }
 
+  restart(): void {
+    this.destroy();
+  }
+
   private getService(lane: EngineLane): StockfishService {
     return lane === 'move' ? this.moveService : this.analysisService;
   }

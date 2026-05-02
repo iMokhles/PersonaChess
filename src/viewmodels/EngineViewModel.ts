@@ -122,6 +122,7 @@ export class EngineViewModel {
       analyzePosition: action,
       pickMoveFromAnalysis: action,
       reset: action,
+      restart: action,
       setError: action,
     });
     
@@ -364,6 +365,13 @@ export class EngineViewModel {
   newGame(): void {
     logger.debug('newGame called');
     this.coordinator.newGame();
+    this.reset();
+  }
+
+  restart(): void {
+    logger.debug('restart called');
+    this.coordinator.restart();
+    this.isInitialized = false;
     this.reset();
   }
 

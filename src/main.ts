@@ -118,17 +118,4 @@ app.on('activate', () => {
 ipcMain.on('feature-options:sync', (_event, partialOptions: FeatureOptions) => {
   const options = mergeFeatureOptions(partialOptions);
   persistMirroredFeatureOptions(options);
-
-  const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow) {
-    return;
-  }
-
-  if (shouldOpenDevTools(options)) {
-    if (!mainWindow.webContents.isDevToolsOpened()) {
-      mainWindow.webContents.openDevTools();
-    }
-  } else if (mainWindow.webContents.isDevToolsOpened()) {
-    mainWindow.webContents.closeDevTools();
-  }
 });
