@@ -310,6 +310,79 @@ test('background analysis does not cancel a valid pending engine move request', 
   stockfishService.stop = originalStop;
 });
 
+test('engine reset clears in-flight analysis state so new requests are not blocked', async () => {
+  localStorageMock.clear();
+
+  const { EngineViewModel } = await import('../src/viewmodels');
+  const { stockfishService } = await import('../src/engine/stockfish.service');
+  const engine = new EngineViewModel();
+
+  const originalInitialize = engine.initialize.bind(engine);
+  const originalAnalyze = stockfishService.analyzePosition.bind(stockfishService);
+  const originalConfigure = stockfishService.configure.bind(stockfishService);
+  const originalStop = stockfishService.stop.bind(stockfishService);
+
+  let resolveFirstAnalysis: (() => void) | null = null;
+  let analyzeCallCount = 0;
+
+  engine.isInitialized = true;
+  engine.initialize = async () => undefined;
+  stockfishService.configure = () => undefined;
+  stockfishService.stop = () => undefined;
+  stockfishService.analyzePosition = async () => {
+    analyzeCallCount += 1;
+
+    if (analyzeCallCount === 1) {
+      return new Promise((resolve) => {
+        resolveFirstAnalysis = () => {
+          resolve([
+            {
+              move: 'e2e4',
+              evaluation: 12,
+              evalLoss: 0,
+              pv: ['e2e4'],
+              multipv: 1,
+              depth: 8,
+            },
+          ]);
+        };
+      });
+    }
+
+    return [
+      {
+        move: 'd2d4',
+        evaluation: 18,
+        evalLoss: 0,
+        pv: ['d2d4'],
+        multipv: 1,
+        depth: 8,
+      },
+    ];
+  };
+
+  const staleAnalysisPromise = engine.analyzePosition('fen-old', 8, 2, 'background');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  engine.reset();
+  assert.equal(engine.isAnalyzing, false);
+
+  const freshAnalysisPromise = engine.analyzePosition('fen-new', 8, 2, 'background');
+  resolveFirstAnalysis?.();
+
+  const freshResult = await freshAnalysisPromise;
+  const staleResult = await staleAnalysisPromise;
+
+  assert.equal(analyzeCallCount, 2);
+  assert.equal(freshResult.analyzedFen, 'fen-new');
+  assert.equal(staleResult.ignored, true);
+
+  engine.initialize = originalInitialize;
+  stockfishService.analyzePosition = originalAnalyze;
+  stockfishService.configure = originalConfigure;
+  stockfishService.stop = originalStop;
+});
+
 test('restored move annotations preserve brilliant undo/redo tracking after restart', async () => {
   localStorageMock.clear();
 
@@ -339,6 +412,28 @@ test('restored move annotations preserve brilliant undo/redo tracking after rest
 
   assert.equal(restoredBoard.undoSingle(), true);
   assert.equal(featureOptionsViewModel.brilliantUsedCount, 0);
+});
+
+test('new game clears stale board transient state and allows black autoplay turn flow again', async () => {
+  localStorageMock.clear();
+
+  const { boardViewModel } = await import('../src/viewmodels');
+
+  boardViewModel.isThinking = true;
+  boardViewModel.isAnalyzingMoves = true;
+  boardViewModel.lastPlayerMoveQuality = 'good';
+  boardViewModel.setAutoPlay(true);
+  boardViewModel.setEnginePlaysFor('b');
+
+  boardViewModel.reset();
+
+  assert.equal(boardViewModel.isThinking, false);
+  assert.equal(boardViewModel.isAnalyzingMoves, false);
+  assert.equal(boardViewModel.lastPlayerMoveQuality, null);
+  assert.equal(boardViewModel.canStartAutoPlayTurn, false);
+
+  assert.equal(boardViewModel.makeMove('e2', 'e4'), true);
+  assert.equal(boardViewModel.canStartAutoPlayTurn, true);
 });
 
 test('cache-hit indicator reflects whether analysis came from cache', async () => {
@@ -709,4 +804,156 @@ test('game analytics viewmodel stores completed sessions in recent games', async
   assert.equal(analytics.recentGames.length, 1);
   assert.equal(analytics.recentGames[0]?.sessionId, 'session_capture');
   assert.equal(analytics.recentGameEntries[0]?.personaLabel, 'Medium');
+});
+
+test('autoplay schedules correctly for a black engine after a white player move', async () => {
+  localStorageMock.clear();
+
+  const { boardViewModel, engineViewModel } = await import('../src/viewmodels');
+
+  const originalSolveNextMove = boardViewModel.solveNextMove.bind(boardViewModel);
+  let solveCalls = 0;
+
+  boardViewModel.reset();
+  boardViewModel.setAutoPlay(true);
+  boardViewModel.setEnginePlaysFor('b');
+  boardViewModel.solveNextMove = async () => {
+    solveCalls += 1;
+    return null;
+  };
+  engineViewModel.isInitialized = true;
+
+  assert.equal(boardViewModel.makeMove('e2', 'e4'), true);
+  await new Promise((resolve) => {
+    setTimeout(resolve, 900);
+  });
+
+  assert.equal(solveCalls, 1);
+
+  boardViewModel.solveNextMove = originalSolveNextMove;
+});
+
+test('autoplay still plays black when player-move background analysis is pending', async () => {
+  localStorageMock.clear();
+
+  const { boardViewModel, engineViewModel, uiStateViewModel } = await import('../src/viewmodels');
+
+  const originalInitialize = engineViewModel.initialize.bind(engineViewModel);
+  const originalAnalyzePosition = engineViewModel.analyzePosition.bind(engineViewModel);
+  const originalPickMove = engineViewModel.pickMoveFromAnalysis.bind(engineViewModel);
+  const originalAutoPlaySpeed = uiStateViewModel.autoPlaySpeed;
+
+  boardViewModel.reset();
+  boardViewModel.setAutoPlay(true);
+  boardViewModel.setEnginePlaysFor('b');
+  uiStateViewModel.setAutoPlaySpeed('fast');
+
+  engineViewModel.isInitialized = true;
+  engineViewModel.initialize = async () => undefined;
+  engineViewModel.analyzePosition = async (fen: string, _depth?: number, _multiPV?: number, purpose = 'background') => {
+    if (purpose === 'background') {
+      return new Promise(() => undefined);
+    }
+
+    return {
+      requestId: 1,
+      analyzedFen: fen,
+      moves: [
+        {
+          move: 'e7e5',
+          evaluation: 20,
+          evalLoss: 0,
+          pv: ['e7e5'],
+          multipv: 1,
+          depth: 8,
+          bucket: 'best',
+        },
+      ],
+      complexity: {
+        level: 'low',
+        score: 0.2,
+        spread: 12,
+        closeCandidates: 1,
+        volatility: 8,
+      },
+      ignored: false,
+      fromCache: false,
+      purpose: 'engineMove',
+    };
+  };
+  engineViewModel.pickMoveFromAnalysis = () => ({
+    move: {
+      move: 'e7e5',
+      evaluation: 20,
+      evalLoss: 0,
+      pv: ['e7e5'],
+      multipv: 1,
+      depth: 8,
+      bucket: 'best',
+    },
+    bucket: 'best',
+    isBrilliant: false,
+  });
+
+  assert.equal(boardViewModel.makeMove('e2', 'e4'), true);
+
+  await new Promise((resolve) => {
+    setTimeout(resolve, 500);
+  });
+
+  assert.equal(boardViewModel.history.length, 2);
+  assert.equal(boardViewModel.history[1]?.san, 'e5');
+
+  engineViewModel.initialize = originalInitialize;
+  engineViewModel.analyzePosition = originalAnalyzePosition;
+  engineViewModel.pickMoveFromAnalysis = originalPickMove;
+  uiStateViewModel.setAutoPlaySpeed(originalAutoPlaySpeed);
+});
+
+test('startAutoPlayTurn lets the white engine begin the game manually', async () => {
+  localStorageMock.clear();
+
+  const { boardViewModel } = await import('../src/viewmodels');
+
+  const originalSolveNextMove = boardViewModel.solveNextMove.bind(boardViewModel);
+  let autoTriggeredArgument: boolean | null = null;
+
+  boardViewModel.reset();
+  boardViewModel.setAutoPlay(true);
+  boardViewModel.setEnginePlaysFor('w');
+  boardViewModel.solveNextMove = async (autoTriggered = false) => {
+    autoTriggeredArgument = autoTriggered;
+    return null;
+  };
+
+  assert.equal(boardViewModel.canStartAutoPlayTurn, true);
+  await boardViewModel.startAutoPlayTurn();
+  assert.equal(autoTriggeredArgument, true);
+
+  boardViewModel.solveNextMove = originalSolveNextMove;
+});
+
+test('startAutoPlayTurn is available for a black engine after the player move', async () => {
+  localStorageMock.clear();
+
+  const { boardViewModel } = await import('../src/viewmodels');
+
+  const originalSolveNextMove = boardViewModel.solveNextMove.bind(boardViewModel);
+  let autoTriggeredArgument: boolean | null = null;
+
+  boardViewModel.reset();
+  boardViewModel.setAutoPlay(true);
+  boardViewModel.setEnginePlaysFor('b');
+  boardViewModel.solveNextMove = async (autoTriggered = false) => {
+    autoTriggeredArgument = autoTriggered;
+    return null;
+  };
+
+  assert.equal(boardViewModel.makeMove('e2', 'e4'), true);
+  assert.equal(boardViewModel.canStartAutoPlayTurn, true);
+
+  await boardViewModel.startAutoPlayTurn();
+  assert.equal(autoTriggeredArgument, true);
+
+  boardViewModel.solveNextMove = originalSolveNextMove;
 });

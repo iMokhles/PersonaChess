@@ -12,5 +12,6 @@ export { GameSetupModal } from './GameSetupModal';
 export { GameSummaryModal } from './GameSummaryModal';
 export { MoveFeedbackToast } from './MoveFeedbackToast';
 export { MoveHistoryPanel } from './MoveHistoryPanel';
+export { QuickControlsPanel } from './QuickControlsPanel';
 export { StatusStrip } from './StatusStrip';
 export { SettingsModal } from './settings/SettingsModal';

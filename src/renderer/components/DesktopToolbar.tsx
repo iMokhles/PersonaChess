@@ -84,6 +84,13 @@ export const DesktopToolbar: React.FC = observer(() => {
             <ToolbarButton label="Undo" shortcut="Cmd/Ctrl+Z" onClick={() => boardViewModel.undoSingle()} disabled={engineBusy || !boardViewModel.canUndo} />
             <ToolbarButton label="Redo" shortcut="Cmd/Ctrl+Shift+Z" onClick={() => boardViewModel.redoSingle()} disabled={engineBusy || !boardViewModel.canRedo} />
             <ToolbarButton
+              label={boardViewModel.isThinking ? 'Starting…' : 'Start Play'}
+              onClick={() => {
+                void boardViewModel.startAutoPlayTurn();
+              }}
+              disabled={!boardViewModel.canStartAutoPlayTurn}
+            />
+            <ToolbarButton
               label={engineViewModel.isInitializing ? 'Starting…' : boardViewModel.isThinking ? 'Solving…' : 'Solve Move'}
               shortcut="Cmd/Ctrl+Enter"
               variant="primary"

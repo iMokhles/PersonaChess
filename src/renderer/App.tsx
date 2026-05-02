@@ -13,6 +13,7 @@ import {
   GameSummaryModal,
   MoveFeedbackToast,
   MoveHistoryPanel,
+  QuickControlsPanel,
   SettingsModal,
   StatusStrip,
 } from './components';
@@ -204,7 +205,10 @@ export const App: React.FC = observer(() => {
         </section>
 
         <aside className="app-side-column">
-          <MoveHistoryPanel />
+          <div className="app-side-stack">
+            <QuickControlsPanel />
+            <MoveHistoryPanel />
+          </div>
         </aside>
       </main>
 

@@ -77,6 +77,7 @@ export class BoardViewModel {
   private analyzedLegalMovesFen: string | null = null;
   private _analysisTimeout: NodeJS.Timeout | null = null; // Timeout for debouncing move analysis
   private _autoPlayTimeout: NodeJS.Timeout | null = null;
+  private _playerMoveAnalysisTimeout: NodeJS.Timeout | null = null;
   private readonly FEN_STORAGE_KEY = 'personachess_current_fen';
   private readonly FEN_HISTORY_KEY = 'personachess_fen_history';
   private readonly BOARD_STATE_STORAGE_KEY = 'personachess_board_state';
@@ -95,6 +96,7 @@ export class BoardViewModel {
       redoSingle: action,
       setAutoPlay: action,
       setAutoPlayPaused: action,
+      startAutoPlayTurn: action,
       toggleAutoPlayPause: action,
       setEnginePlaysFor: action,
       flipBoard: action,
@@ -143,11 +145,7 @@ export class BoardViewModel {
       this.startAutoPlayDurationTracking();
     }
 
-    if (enabled && this.canScheduleAutoPlay) {
-      this.scheduleAutoPlayMove();
-    } else if (this.canScheduleAutoPlay) {
-      this.clearAutoPlaySchedule();
-    }
+    this.syncAutoPlaySchedule();
     logger.debug('Auto-play set to:', enabled);
   }
 
@@ -161,9 +159,18 @@ export class BoardViewModel {
     this.autoPlayPaused = paused;
     if (paused) {
       this.clearAutoPlaySchedule();
-    } else if (this.canScheduleAutoPlay) {
-      this.scheduleAutoPlayMove();
+    } else {
+      this.syncAutoPlaySchedule();
     }
+  }
+
+  async startAutoPlayTurn(): Promise<void> {
+    if (!this.canStartAutoPlayTurn) {
+      return;
+    }
+
+    this.clearAutoPlaySchedule();
+    await this.solveNextMove(true);
   }
 
   toggleAutoPlayPause(): void {
@@ -175,6 +182,7 @@ export class BoardViewModel {
    */
   setEnginePlaysFor(side: 'w' | 'b'): void {
     this.enginePlaysFor = side;
+    this.syncAutoPlaySchedule();
     logger.debug('Engine plays for:', side === 'w' ? 'White' : 'Black');
   }
 
@@ -215,11 +223,10 @@ export class BoardViewModel {
         setupName,
         setupCategory,
       });
+      this.resetTransientBoardState();
       this.updateState();
       this.statusMessage = 'Position loaded';
       this.lastSkippedEngineMoveMessage = null;
-      this.clearAutoPlaySchedule();
-      this.autoPlayPaused = false;
       this.recentMoveFeedback = null;
       engineViewModel.reset();
       logger.debug('FEN loaded successfully');
@@ -262,11 +269,10 @@ export class BoardViewModel {
         setupName,
         setupCategory,
       });
+      this.resetTransientBoardState();
       this.updateState();
       this.statusMessage = 'PGN loaded';
       this.lastSkippedEngineMoveMessage = null;
-      this.clearAutoPlaySchedule();
-      this.autoPlayPaused = false;
       this.recentMoveFeedback = null;
       engineViewModel.reset();
       return true;
@@ -329,18 +335,24 @@ export class BoardViewModel {
         });
         engineViewModel.reset();
         this.lastSkippedEngineMoveMessage = null;
-        
-        // Analyze the player's move quality
-        this.analyzePlayerMove(move);
-        
+
+        const shouldAutoPlayNow =
+          this.autoPlayEnabled
+          && !this.isGameOver
+          && this.chess.turn() === this.enginePlaysFor;
+
         // Make engine move after a short delay if:
         // 1. Auto-play is enabled
         // 2. Game is not over
         // 3. It's now the engine's turn (the turn changed after the human move)
-        if (this.autoPlayEnabled && !this.isGameOver && this.chess.turn() === this.enginePlaysFor) {
+        if (shouldAutoPlayNow) {
           logger.debug('Scheduling auto-play for engine side:', this.enginePlaysFor);
           this.scheduleAutoPlayMove();
         }
+
+        // Defer player-move grading while an engine auto-play reply is pending so
+        // the shared Stockfish worker can prioritize the actual move response.
+        this.schedulePlayerMoveAnalysis(move);
         
         // Return true as the move was successful
         return true;
@@ -536,14 +548,13 @@ export class BoardViewModel {
       setupName: 'New Game',
       setupCategory: 'custom',
     });
+    this.resetTransientBoardState();
     this.updateState();
     this.lastMove = null;
     this.lastPlayedBucket = null;
     this.statusMessage = 'Board reset';
     this.lastSkippedEngineMoveMessage = null;
     this.recentMoveFeedback = null;
-    this.clearAutoPlaySchedule();
-    this.autoPlayPaused = false;
     engineViewModel.reset();
     logger.debug('Board reset, new FEN:', this.fen);
   }
@@ -568,6 +579,7 @@ export class BoardViewModel {
           this.lastPlayedBucket = null;
           this.statusMessage = 'Undid last 2 moves (human + engine)';
           this.clearAutoPlaySchedule();
+          this.clearPendingPlayerMoveAnalysis();
           engineViewModel.reset();
           logger.debug('Undid 2 moves');
           return true;
@@ -580,6 +592,7 @@ export class BoardViewModel {
           this.lastPlayedBucket = null;
           this.statusMessage = 'Move undone';
           this.clearAutoPlaySchedule();
+          this.clearPendingPlayerMoveAnalysis();
           engineViewModel.reset();
           logger.debug('Undid 1 move');
           return true;
@@ -593,6 +606,7 @@ export class BoardViewModel {
         this.lastPlayedBucket = null;
         this.statusMessage = 'Move undone';
         this.clearAutoPlaySchedule();
+        this.clearPendingPlayerMoveAnalysis();
         engineViewModel.reset();
         logger.debug('Undid 1 move');
         return true;
@@ -986,6 +1000,29 @@ export class BoardViewModel {
     }, 100);
   }
 
+  private schedulePlayerMoveAnalysis(move: Move): void {
+    this.clearPendingPlayerMoveAnalysis();
+
+    const attemptAnalysis = (): void => {
+      this._playerMoveAnalysisTimeout = null;
+
+      const autoPlayPending =
+        this.autoPlayEnabled
+        && !this.autoPlayPaused
+        && !this.isGameOver
+        && (this.isThinking || this.isAutoPlayCountingDown || this.turn === this.enginePlaysFor);
+
+      if (autoPlayPending) {
+        this._playerMoveAnalysisTimeout = setTimeout(attemptAnalysis, 150);
+        return;
+      }
+
+      void this.analyzePlayerMove(move);
+    };
+
+    this._playerMoveAnalysisTimeout = setTimeout(attemptAnalysis, 0);
+  }
+
   /**
    * Get arrows data for react-chessboard
    * Returns array of Arrow objects with startSquare, endSquare, and color properties
@@ -1205,6 +1242,7 @@ export class BoardViewModel {
       this.lastPlayedBucket = null;
       this.statusMessage = 'Undid 1 move';
       this.clearAutoPlaySchedule();
+      this.clearPendingPlayerMoveAnalysis();
       engineViewModel.reset();
       logger.debug('Undid 1 move, redo stack size:', this.redoStack.length);
       return true;
@@ -1250,6 +1288,7 @@ export class BoardViewModel {
           move,
           isBrilliant: annotationToRedo?.consumedBrilliant ?? false,
         });
+        this.clearPendingPlayerMoveAnalysis();
         engineViewModel.reset();
         logger.debug('Redid 1 move');
         
@@ -1289,6 +1328,14 @@ export class BoardViewModel {
 
   get autoPlayCurrentSideLabel(): string {
     return this.enginePlaysFor === 'w' ? 'White' : 'Black';
+  }
+
+  get canStartAutoPlayTurn(): boolean {
+    return this.autoPlayEnabled
+      && !this.autoPlayPaused
+      && !this.isThinking
+      && !this.isGameOver
+      && this.turn === this.enginePlaysFor;
   }
 
   get isAutoPlayCountingDown(): boolean {
@@ -1461,6 +1508,39 @@ export class BoardViewModel {
       this._autoPlayTimeout = null;
     }
     this.autoPlayScheduledFor = 0;
+  }
+
+  private clearPendingPlayerMoveAnalysis(): void {
+    if (this._playerMoveAnalysisTimeout) {
+      clearTimeout(this._playerMoveAnalysisTimeout);
+      this._playerMoveAnalysisTimeout = null;
+    }
+  }
+
+  private resetTransientBoardState(): void {
+    if (this._analysisTimeout) {
+      clearTimeout(this._analysisTimeout);
+      this._analysisTimeout = null;
+    }
+
+    this.clearAutoPlaySchedule();
+    this.clearPendingPlayerMoveAnalysis();
+    this.isThinking = false;
+    this.isAnalyzingMoves = false;
+    this.autoPlayPaused = false;
+    this.autoPlayScheduledFor = 0;
+    this.lastPlayerMoveQuality = null;
+    this._analyzedLegalMoves = {};
+    this.analyzedLegalMovesFen = null;
+  }
+
+  private syncAutoPlaySchedule(): void {
+    if (this.canScheduleAutoPlay) {
+      this.scheduleAutoPlayMove();
+      return;
+    }
+
+    this.clearAutoPlaySchedule();
   }
 
   private stopAutoPlayDurationTracking(): void {

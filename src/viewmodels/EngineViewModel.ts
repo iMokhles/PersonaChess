@@ -338,6 +338,8 @@ export class EngineViewModel {
     runInAction(() => {
       this.isAnalyzing = false;
     });
+    this.invalidatePendingRequests();
+    this.activeAnalysisRun = null;
   }
 
   /**
@@ -354,12 +356,16 @@ export class EngineViewModel {
    */
   reset(): void {
     logger.debug('reset called');
+    stockfishService.stop();
+    this.invalidatePendingRequests();
+    this.activeAnalysisRun = null;
     this.analyzedMoves = [];
     this.lastPickedMove = null;
     this.lastComplexity = null;
     this.lastAnalysisFromCache = false;
     this.lastAnalysisPurpose = null;
     this.error = null;
+    this.isAnalyzing = false;
     this.isInitializing = false;
   }
 
@@ -511,6 +517,11 @@ export class EngineViewModel {
     }
 
     return this.lastAnalysisFromCache ? 'Ready (cache warm)' : 'Ready';
+  }
+
+  private invalidatePendingRequests(): void {
+    this.latestRequestIds.engineMove = ++this.nextRequestIds.engineMove;
+    this.latestRequestIds.background = ++this.nextRequestIds.background;
   }
 }
 

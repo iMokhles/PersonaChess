@@ -102,6 +102,13 @@
   justify-content: flex-start;
 }
 
+.app-side-stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .app-board-card {
   position: relative;
   min-height: 0;
