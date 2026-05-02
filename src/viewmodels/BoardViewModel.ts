@@ -3,16 +3,23 @@
  * ViewModel layer - MobX store for chess board state
  */
 
-import { makeAutoObservable, action, reaction, runInAction } from 'mobx';
-import { Chess, Move, Square } from 'chess.js';
-import { canApplyAnalyzedMove } from '../engine/analysisSafety';
-import { deriveBrilliantUsage, MoveAnnotation } from '../engine/brilliantTracking';
-import { PersistedBoardState, createGameSessionId, resolvePgnStartFen } from '../engine/gameSession';
-import { GameSetupPreset } from '../engine/gameSetupPresets';
-import { engineViewModel } from './EngineViewModel';
-import { configViewModel } from './ConfigViewModel';
-import { featureOptionsViewModel } from './FeatureOptionsViewModel';
-import { createDebugLogger } from '../shared/debug';
+import { makeAutoObservable, action, reaction, runInAction } from "mobx";
+import { Chess, Move, Square } from "chess.js";
+import { canApplyAnalyzedMove } from "../engine/analysisSafety";
+import {
+  deriveBrilliantUsage,
+  MoveAnnotation,
+} from "../engine/brilliantTracking";
+import {
+  PersistedBoardState,
+  createGameSessionId,
+  resolvePgnStartFen,
+} from "../engine/gameSession";
+import { GameSetupPreset } from "../engine/gameSetupPresets";
+import { engineViewModel } from "./EngineViewModel";
+import { configViewModel } from "./ConfigViewModel";
+import { featureOptionsViewModel } from "./FeatureOptionsViewModel";
+import { createDebugLogger } from "../shared/debug";
 import {
   PickedMoveResult,
   MoveBucket,
@@ -21,16 +28,16 @@ import {
   BUCKET_LABELS,
   BUCKET_COLORS,
   DISPLAY_BUCKET_COLORS,
-} from '../engine/types';
-import { calculateHumanDelayMs } from '../engine/personaBias';
-import { mapLegalMovesToBuckets } from '../engine/moveClassifier';
-import { uiStateViewModel } from './UiStateViewModel';
+} from "../engine/types";
+import { calculateHumanDelayMs } from "../engine/personaBias";
+import { mapLegalMovesToBuckets } from "../engine/moveClassifier";
+import { uiStateViewModel } from "./UiStateViewModel";
 
-const logger = createDebugLogger('BoardViewModel');
+const logger = createDebugLogger("BoardViewModel");
 
 export interface RecentMoveFeedback {
   id: string;
-  actor: 'player' | 'engine' | 'redo';
+  actor: "player" | "engine" | "redo";
   san: string;
   qualityLabel?: string | null;
   bucket?: DisplayMoveBucket | MoveBucket | null;
@@ -51,24 +58,24 @@ export class BoardViewModel {
   history: Move[] = [];
   lastMove: { from: Square; to: Square } | null = null;
   lastPlayedBucket: MoveBucket | null = null;
-  statusMessage = 'Ready';
+  statusMessage = "Ready";
   lastSkippedEngineMoveMessage: string | null = null;
   isThinking = false;
   autoPlayEnabled = true; // Auto-play engine moves after human moves
-  enginePlaysFor: 'w' | 'b' = 'b'; // Which side the engine plays for (default: black)
+  enginePlaysFor: "w" | "b" = "b"; // Which side the engine plays for (default: black)
   boardFlipped = false; // Board orientation (false = white on bottom, true = black on bottom)
   showMoveArrows = false; // Show arrows for all possible moves
-  showArrowsForSide: 'current' | 'player' | 'engine' = 'current'; // Which side's moves to show arrows for
+  showArrowsForSide: "current" | "player" | "engine" = "current"; // Which side's moves to show arrows for
   lastPlayerMoveQuality: DisplayMoveBucket | null = null; // Quality of the last player move
   isAnalyzingMoves = false; // Whether we're currently analyzing moves
   autoPlayPaused = false;
   autoPlayScheduledFor = 0;
-  currentSetupName = 'New Game';
-  currentSetupCategory = 'custom';
+  currentSetupName = "New Game";
+  currentSetupCategory = "custom";
   recentMoveFeedback: RecentMoveFeedback | null = null;
   autoPlayAccumulatedMs = 0;
   autoPlayLastResumedAt: number | null = null;
-  
+
   // Store analyzed moves as an object for MobX observability
   private _analyzedLegalMoves: Record<string, DisplayMoveBucket> = {};
   private redoStack: Move[] = []; // Stack of moves that were undone for redo functionality
@@ -78,9 +85,9 @@ export class BoardViewModel {
   private _analysisTimeout: NodeJS.Timeout | null = null; // Timeout for debouncing move analysis
   private _autoPlayTimeout: NodeJS.Timeout | null = null;
   private _playerMoveAnalysisTimeout: NodeJS.Timeout | null = null;
-  private readonly FEN_STORAGE_KEY = 'personachess_current_fen';
-  private readonly FEN_HISTORY_KEY = 'personachess_fen_history';
-  private readonly BOARD_STATE_STORAGE_KEY = 'personachess_board_state';
+  private readonly FEN_STORAGE_KEY = "personachess_current_fen";
+  private readonly FEN_HISTORY_KEY = "personachess_fen_history";
+  private readonly BOARD_STATE_STORAGE_KEY = "personachess_board_state";
   private readonly MAX_HISTORY = 50; // Maximum number of FEN positions to store
 
   constructor() {
@@ -109,7 +116,7 @@ export class BoardViewModel {
       analyzeAllMoves: action,
       analyzePlayerMove: action,
     });
-    
+
     // Try to restore FEN from localStorage on initialization
     this.restoreFenFromStorage();
 
@@ -125,8 +132,8 @@ export class BoardViewModel {
       },
       { fireImmediately: true },
     );
-    
-    logger.debug('Initialized with FEN:', this.fen);
+
+    logger.debug("Initialized with FEN:", this.fen);
   }
 
   /**
@@ -146,7 +153,7 @@ export class BoardViewModel {
     }
 
     this.syncAutoPlaySchedule();
-    logger.debug('Auto-play set to:', enabled);
+    logger.debug("Auto-play set to:", enabled);
   }
 
   setAutoPlayPaused(paused: boolean): void {
@@ -180,10 +187,10 @@ export class BoardViewModel {
   /**
    * Set which side the engine plays for
    */
-  setEnginePlaysFor(side: 'w' | 'b'): void {
+  setEnginePlaysFor(side: "w" | "b"): void {
     this.enginePlaysFor = side;
     this.syncAutoPlaySchedule();
-    logger.debug('Engine plays for:', side === 'w' ? 'White' : 'Black');
+    logger.debug("Engine plays for:", side === "w" ? "White" : "Black");
   }
 
   /**
@@ -211,7 +218,7 @@ export class BoardViewModel {
         setupName,
         setupCategory,
       } = options;
-      logger.debug('loadFen called:', fen);
+      logger.debug("loadFen called:", fen);
       const newChess = new Chess(fen);
       this.chess = newChess;
       this.beginSessionState({
@@ -225,14 +232,14 @@ export class BoardViewModel {
       });
       this.resetTransientBoardState();
       this.updateState();
-      this.statusMessage = 'Position loaded';
+      this.statusMessage = "Position loaded";
       this.lastSkippedEngineMoveMessage = null;
       this.recentMoveFeedback = null;
       engineViewModel.restart();
-      logger.debug('FEN loaded successfully');
+      logger.debug("FEN loaded successfully");
       return true;
     } catch (err) {
-      logger.error('loadFen error:', err);
+      logger.error("loadFen error:", err);
       this.statusMessage = `Invalid FEN: ${err}`;
       return false;
     }
@@ -257,10 +264,13 @@ export class BoardViewModel {
         setupName,
         setupCategory,
       } = options;
-      logger.debug('loadPgn called');
+      logger.debug("loadPgn called");
       const newChess = new Chess();
       newChess.loadPgn(pgn);
-      const gameStartFen = resolvePgnStartFen(newChess.header(), new Chess().fen());
+      const gameStartFen = resolvePgnStartFen(
+        newChess.header(),
+        new Chess().fen(),
+      );
       this.chess = newChess;
       this.beginSessionState({
         gameSessionId: sessionId ?? createGameSessionId(),
@@ -271,29 +281,30 @@ export class BoardViewModel {
       });
       this.resetTransientBoardState();
       this.updateState();
-      this.statusMessage = 'PGN loaded';
+      this.statusMessage = "PGN loaded";
       this.lastSkippedEngineMoveMessage = null;
       this.recentMoveFeedback = null;
       engineViewModel.restart();
       return true;
     } catch (err) {
-      logger.error('loadPgn error:', err);
+      logger.error("loadPgn error:", err);
       this.statusMessage = `Invalid PGN: ${err}`;
       return false;
     }
   }
 
   loadGameSetupPreset(preset: GameSetupPreset): boolean {
-    const sideLabel = preset.side === 'white' ? 'White' : 'Black';
-    const loaded = preset.sourceType === 'fen'
-      ? this.loadFen(preset.source, {
-          setupName: preset.name,
-          setupCategory: preset.category,
-        })
-      : this.loadPgn(preset.source, {
-          setupName: preset.name,
-          setupCategory: preset.category,
-        });
+    const sideLabel = preset.side === "white" ? "White" : "Black";
+    const loaded =
+      preset.sourceType === "fen"
+        ? this.loadFen(preset.source, {
+            setupName: preset.name,
+            setupCategory: preset.category,
+          })
+        : this.loadPgn(preset.source, {
+            setupName: preset.name,
+            setupCategory: preset.category,
+          });
 
     if (loaded) {
       this.statusMessage = `${preset.name} loaded (${sideLabel})`;
@@ -306,30 +317,36 @@ export class BoardViewModel {
    * Make a move on the board (similar to the example pattern)
    * This is synchronous for immediate UI feedback, just like the example
    */
-  makeMove(from: Square, to: Square, promotion = 'q'): boolean {
-    logger.debug('makeMove called', { from, to, promotion, currentFen: this.fen, currentTurn: this.chess.turn() });
-    
+  makeMove(from: Square, to: Square, promotion = "q"): boolean {
+    logger.debug("makeMove called", {
+      from,
+      to,
+      promotion,
+      currentFen: this.fen,
+      currentTurn: this.chess.turn(),
+    });
+
     try {
       // Try to make the move according to chess.js logic (exactly like the example)
       // chess.js will validate the move automatically
       const move = this.chess.move({
         from,
         to,
-        promotion: promotion as 'q' | 'r' | 'b' | 'n' | undefined,
+        promotion: promotion as "q" | "r" | "b" | "n" | undefined,
       });
 
       if (move) {
-        logger.debug('Move successful:', move.san);
+        logger.debug("Move successful:", move.san);
         // Clear redo stack when a new move is made
         this.clearRedoState();
-        this.recordMoveAnnotation(move, false, 'player');
+        this.recordMoveAnnotation(move, false, "player");
         // Update the position state to trigger a re-render (via MobX observable)
         this.updateState();
         this.lastMove = { from, to };
         this.lastPlayedBucket = null;
         this.statusMessage = `You played: ${move.san}`;
         this.publishMoveFeedback({
-          actor: 'player',
+          actor: "player",
           move,
           isBrilliant: false,
         });
@@ -337,32 +354,35 @@ export class BoardViewModel {
         this.lastSkippedEngineMoveMessage = null;
 
         const shouldAutoPlayNow =
-          this.autoPlayEnabled
-          && !this.isGameOver
-          && this.chess.turn() === this.enginePlaysFor;
+          this.autoPlayEnabled &&
+          !this.isGameOver &&
+          this.chess.turn() === this.enginePlaysFor;
 
         // Make engine move after a short delay if:
         // 1. Auto-play is enabled
         // 2. Game is not over
         // 3. It's now the engine's turn (the turn changed after the human move)
         if (shouldAutoPlayNow) {
-          logger.debug('Scheduling auto-play for engine side:', this.enginePlaysFor);
+          logger.debug(
+            "Scheduling auto-play for engine side:",
+            this.enginePlaysFor,
+          );
           this.scheduleAutoPlayMove();
         }
 
         // Defer player-move grading while an engine auto-play reply is pending so
         // the shared Stockfish worker can prioritize the actual move response.
         this.schedulePlayerMoveAnalysis(move);
-        
+
         // Return true as the move was successful
         return true;
       } else {
-        logger.debug('Move failed - chess.js returned null');
+        logger.debug("Move failed - chess.js returned null");
         // Return false as the move was not successful
         return false;
       }
     } catch (err) {
-      logger.debug('Move exception:', err);
+      logger.debug("Move exception:", err);
       // Return false as the move was not successful
       return false;
     }
@@ -377,28 +397,32 @@ export class BoardViewModel {
     options: { consumedBrilliant?: boolean } = {},
   ): Promise<boolean> {
     if (uci.length < 4) return false;
-    
+
     const from = uci.slice(0, 2) as Square;
     const to = uci.slice(2, 4) as Square;
     const promotion = uci.length > 4 ? uci[4] : undefined;
-    
+
     try {
       const move = this.chess.move({
         from,
         to,
-        promotion: promotion as 'q' | 'r' | 'b' | 'n' | undefined,
+        promotion: promotion as "q" | "r" | "b" | "n" | undefined,
       });
 
       if (move) {
         // Clear redo stack when a new move is made
         this.clearRedoState();
-        this.recordMoveAnnotation(move, options.consumedBrilliant ?? false, 'engine');
+        this.recordMoveAnnotation(
+          move,
+          options.consumedBrilliant ?? false,
+          "engine",
+        );
         this.updateState();
         this.lastMove = { from, to };
         this.lastPlayedBucket = null;
         this.statusMessage = `Engine played: ${move.san}`;
         this.publishMoveFeedback({
-          actor: 'engine',
+          actor: "engine",
           move,
           isBrilliant: options.consumedBrilliant ?? false,
         });
@@ -416,14 +440,14 @@ export class BoardViewModel {
    */
   async solveNextMove(autoTriggered = false): Promise<PickedMoveResult | null> {
     if (this.isGameOver) {
-      this.statusMessage = 'Game is over';
+      this.statusMessage = "Game is over";
       return null;
     }
 
     try {
       runInAction(() => {
         this.isThinking = true;
-        this.statusMessage = 'Engine thinking...';
+        this.statusMessage = "Engine thinking...";
         this.clearAutoPlaySchedule();
       });
 
@@ -437,38 +461,44 @@ export class BoardViewModel {
         this.fen,
         configViewModel.depth,
         configViewModel.multiPV,
-        'engineMove',
+        "engineMove",
       );
 
       // Check if analysis returned no moves (game over position)
       if (analysis.ignored || analysis.moves.length === 0) {
         runInAction(() => {
           if (analysis.ignored) {
-            this.statusMessage = 'Engine analysis expired';
+            this.statusMessage = "Engine analysis expired";
           } else if (this.isCheckmate) {
-            this.statusMessage = 'Checkmate! Game over.';
+            this.statusMessage = "Checkmate! Game over.";
           } else if (this.isStalemate) {
-            this.statusMessage = 'Stalemate! Game over.';
+            this.statusMessage = "Stalemate! Game over.";
           } else if (this.isDraw) {
-            this.statusMessage = 'Draw! Game over.';
+            this.statusMessage = "Draw! Game over.";
           } else {
-            this.statusMessage = 'No legal moves available';
+            this.statusMessage = "No legal moves available";
           }
-          this.lastSkippedEngineMoveMessage = analysis.ignored ? 'A newer engine analysis replaced this move request.' : null;
+          this.lastSkippedEngineMoveMessage = analysis.ignored
+            ? "A newer engine analysis replaced this move request."
+            : null;
           this.isThinking = false;
         });
         return null;
       }
 
       // Pick a move based on bucket configuration
-      const persona = configViewModel.currentPresetId ?? 'custom';
-      const result = engineViewModel.pickMoveFromAnalysis(analysis, configViewModel.bucketConfig, {
-        fen: this.fen,
-        gameStartFen: this.gameStartFen,
-        moveCount: this.moveCount,
-        sideToMove: this.turn,
-        persona,
-      });
+      const persona = configViewModel.currentPresetId ?? "custom";
+      const result = engineViewModel.pickMoveFromAnalysis(
+        analysis,
+        configViewModel.bucketConfig,
+        {
+          fen: this.fen,
+          gameStartFen: this.gameStartFen,
+          moveCount: this.moveCount,
+          sideToMove: this.turn,
+          persona,
+        },
+      );
 
       if (result) {
         if (autoTriggered && featureOptionsViewModel.useHumanDelaySimulation) {
@@ -482,8 +512,10 @@ export class BoardViewModel {
 
         if (!canApplyAnalyzedMove(this.fen, analysis.analyzedFen)) {
           runInAction(() => {
-            this.statusMessage = 'Position changed, stale engine move discarded';
-            this.lastSkippedEngineMoveMessage = 'Skipped engine move because the board changed before it could be played.';
+            this.statusMessage =
+              "Position changed, stale engine move discarded";
+            this.lastSkippedEngineMoveMessage =
+              "Skipped engine move because the board changed before it could be played.";
             this.isThinking = false;
           });
           return null;
@@ -493,7 +525,7 @@ export class BoardViewModel {
         const moveSuccess = await this.makeMoveUCI(result.move.move, {
           consumedBrilliant: result.isBrilliant ?? false,
         });
-        
+
         if (moveSuccess) {
           this.updateLastAnnotation({
             bucket: result.bucket,
@@ -505,14 +537,14 @@ export class BoardViewModel {
           runInAction(() => {
             this.lastPlayedBucket = result.bucket;
             this.statusMessage = result.isBrilliant
-              ? 'Engine played: Brilliant move'
+              ? "Engine played: Brilliant move"
               : `Engine played: ${BUCKET_LABELS[result.bucket]} move`;
             this.lastSkippedEngineMoveMessage = null;
             this.isThinking = false;
           });
         } else {
           runInAction(() => {
-            this.statusMessage = 'Engine move failed';
+            this.statusMessage = "Engine move failed";
             this.isThinking = false;
           });
         }
@@ -520,13 +552,13 @@ export class BoardViewModel {
         return result;
       } else {
         runInAction(() => {
-          this.statusMessage = 'No moves available';
+          this.statusMessage = "No moves available";
           this.isThinking = false;
         });
         return null;
       }
     } catch (err) {
-      logger.error('solveNextMove error:', err);
+      logger.error("solveNextMove error:", err);
       runInAction(() => {
         this.statusMessage = `Error: ${err}`;
         this.isThinking = false;
@@ -539,49 +571,49 @@ export class BoardViewModel {
    * Reset the board to starting position
    */
   reset(): void {
-    logger.debug('reset called');
+    logger.debug("reset called");
     this.chess = new Chess();
     this.beginSessionState({
       gameSessionId: createGameSessionId(),
       gameStartFen: this.chess.fen(),
       resetBrilliantTracking: true,
-      setupName: 'New Game',
-      setupCategory: 'custom',
+      setupName: "New Game",
+      setupCategory: "custom",
     });
     this.resetTransientBoardState();
     this.updateState();
     this.lastMove = null;
     this.lastPlayedBucket = null;
-    this.statusMessage = 'Board reset';
+    this.statusMessage = "Board reset";
     this.lastSkippedEngineMoveMessage = null;
     this.recentMoveFeedback = null;
     engineViewModel.restart();
-    logger.debug('Board reset, new FEN:', this.fen);
+    logger.debug("Board reset, new FEN:", this.fen);
   }
 
   /**
    * Undo the last move (or last two moves if auto-play is on and engine just moved)
    */
   undo(): boolean {
-    logger.debug('undo called, history length:', this.history.length);
-    
+    logger.debug("undo called, history length:", this.history.length);
+
     // If auto-play is enabled and the last move was by the engine, undo both moves
     if (this.autoPlayEnabled && this.history.length >= 2) {
       // Check if the last move was by the engine
       const lastMove = this.history[this.history.length - 1];
       const lastMoveColor = lastMove.color;
-      
+
       // If last move was by engine, undo both (engine move + human move)
       if (lastMoveColor === this.enginePlaysFor) {
         if (this.undoMoves(2)) {
           this.updateState();
           this.lastMove = null;
           this.lastPlayedBucket = null;
-          this.statusMessage = 'Undid last 2 moves (human + engine)';
+          this.statusMessage = "Undid last 2 moves (human + engine)";
           this.clearAutoPlaySchedule();
           this.clearPendingPlayerMoveAnalysis();
           engineViewModel.reset();
-          logger.debug('Undid 2 moves');
+          logger.debug("Undid 2 moves");
           return true;
         }
       } else {
@@ -590,11 +622,11 @@ export class BoardViewModel {
           this.updateState();
           this.lastMove = null;
           this.lastPlayedBucket = null;
-          this.statusMessage = 'Move undone';
+          this.statusMessage = "Move undone";
           this.clearAutoPlaySchedule();
           this.clearPendingPlayerMoveAnalysis();
           engineViewModel.reset();
-          logger.debug('Undid 1 move');
+          logger.debug("Undid 1 move");
           return true;
         }
       }
@@ -604,16 +636,16 @@ export class BoardViewModel {
         this.updateState();
         this.lastMove = null;
         this.lastPlayedBucket = null;
-        this.statusMessage = 'Move undone';
+        this.statusMessage = "Move undone";
         this.clearAutoPlaySchedule();
         this.clearPendingPlayerMoveAnalysis();
         engineViewModel.reset();
-        logger.debug('Undid 1 move');
+        logger.debug("Undid 1 move");
         return true;
       }
     }
-    
-    logger.debug('Undo failed - no moves to undo');
+
+    logger.debug("Undo failed - no moves to undo");
     return false;
   }
 
@@ -626,8 +658,13 @@ export class BoardViewModel {
     this.analyzedLegalMovesFen = null;
     // Save FEN to localStorage whenever it changes
     this.saveFenToHistory();
-    logger.debug('updateState - FEN:', this.fen, 'History length:', this.history.length);
-    
+    logger.debug(
+      "updateState - FEN:",
+      this.fen,
+      "History length:",
+      this.history.length,
+    );
+
     // Automatically re-analyze moves if arrows are enabled (debounced to prevent excessive calls)
     if (this.showMoveArrows && !this.isGameOver && !this.isAnalyzingMoves) {
       // Clear previous analysis and trigger new analysis asynchronously
@@ -639,8 +676,8 @@ export class BoardViewModel {
       }
       // Debounce analysis to prevent excessive calls
       this._analysisTimeout = setTimeout(() => {
-        this.analyzeAllMoves().catch(err => {
-          logger.error('Failed to analyze moves:', err);
+        this.analyzeAllMoves().catch((err) => {
+          logger.error("Failed to analyze moves:", err);
         });
       }, 300); // 300ms debounce
     }
@@ -652,8 +689,13 @@ export class BoardViewModel {
   flipBoard(): void {
     this.boardFlipped = !this.boardFlipped;
     // Flip the engine's playing color when board is flipped
-    this.enginePlaysFor = this.enginePlaysFor === 'w' ? 'b' : 'w';
-    logger.debug('Board flipped, orientation:', this.boardFlipped ? 'black' : 'white', 'Engine now plays for:', this.enginePlaysFor === 'w' ? 'White' : 'Black');
+    this.enginePlaysFor = this.enginePlaysFor === "w" ? "b" : "w";
+    logger.debug(
+      "Board flipped, orientation:",
+      this.boardFlipped ? "black" : "white",
+      "Engine now plays for:",
+      this.enginePlaysFor === "w" ? "White" : "Black",
+    );
   }
 
   setBoardFlipped(flipped: boolean): void {
@@ -668,14 +710,14 @@ export class BoardViewModel {
   saveFenToHistory(): void {
     try {
       const currentFen = this.fen;
-      
+
       // Save current FEN
       localStorage.setItem(this.FEN_STORAGE_KEY, currentFen);
-      
+
       // Get existing history
       const historyJson = localStorage.getItem(this.FEN_HISTORY_KEY);
       let history: string[] = historyJson ? JSON.parse(historyJson) : [];
-      
+
       if (history.length === 0 || history[history.length - 1] !== currentFen) {
         history.push(currentFen);
 
@@ -697,14 +739,17 @@ export class BoardViewModel {
           historyAnnotations: this.historyAnnotations,
           redoAnnotations: this.redoAnnotations,
         };
-        localStorage.setItem(this.BOARD_STATE_STORAGE_KEY, JSON.stringify(boardState));
+        localStorage.setItem(
+          this.BOARD_STATE_STORAGE_KEY,
+          JSON.stringify(boardState),
+        );
       } else {
         this.clearPersistedBoardState();
       }
-      
-      logger.debug('Saved FEN to history, total entries:', history.length);
+
+      logger.debug("Saved FEN to history, total entries:", history.length);
     } catch (err) {
-      logger.error('Failed to save FEN to history:', err);
+      logger.error("Failed to save FEN to history:", err);
     }
   }
 
@@ -737,18 +782,21 @@ export class BoardViewModel {
             });
           }
 
-          if (featureOptionsViewModel.brilliantGameSessionId !== this.gameSessionId) {
+          if (
+            featureOptionsViewModel.brilliantGameSessionId !==
+            this.gameSessionId
+          ) {
             featureOptionsViewModel.resetBrilliantTracking(this.gameSessionId);
           }
-          this.statusMessage = 'Restored position from previous session';
-          logger.debug('Restored FEN from storage:', savedFen);
+          this.statusMessage = "Restored position from previous session";
+          logger.debug("Restored FEN from storage:", savedFen);
         } catch (err) {
-          logger.warn('Saved FEN is invalid, using default:', err);
+          logger.warn("Saved FEN is invalid, using default:", err);
           localStorage.removeItem(this.FEN_STORAGE_KEY);
         }
       }
     } catch (err) {
-      logger.error('Failed to restore FEN from storage:', err);
+      logger.error("Failed to restore FEN from storage:", err);
     }
   }
 
@@ -759,14 +807,14 @@ export class BoardViewModel {
     try {
       const historyJson = localStorage.getItem(this.FEN_HISTORY_KEY);
       if (!historyJson) return false;
-      
+
       const history: string[] = JSON.parse(historyJson);
       if (index < 0 || index >= history.length) return false;
-      
+
       const fen = history[index];
       return this.loadFen(fen);
     } catch (err) {
-      logger.error('Failed to load FEN from history:', err);
+      logger.error("Failed to load FEN from history:", err);
       return false;
     }
   }
@@ -803,12 +851,16 @@ export class BoardViewModel {
       clearTimeout(this._analysisTimeout);
       this._analysisTimeout = null;
     }
-    
+
     this.showMoveArrows = !this.showMoveArrows;
-    if (this.showMoveArrows && Object.keys(this._analyzedLegalMoves).length === 0 && !this.isAnalyzingMoves) {
+    if (
+      this.showMoveArrows &&
+      Object.keys(this._analyzedLegalMoves).length === 0 &&
+      !this.isAnalyzingMoves
+    ) {
       // Auto-analyze if arrows are enabled and we don't have analysis yet
-      this.analyzeAllMoves().catch(err => {
-        console.error('[BoardViewModel] Failed to analyze moves:', err);
+      this.analyzeAllMoves().catch((err) => {
+        console.error("[BoardViewModel] Failed to analyze moves:", err);
       });
     } else if (!this.showMoveArrows) {
       // Clear analysis when arrows are disabled to free memory
@@ -826,9 +878,9 @@ export class BoardViewModel {
   /**
    * Set which side's moves to show arrows for
    */
-  setShowArrowsForSide(side: 'current' | 'player' | 'engine'): void {
+  setShowArrowsForSide(side: "current" | "player" | "engine"): void {
     this.showArrowsForSide = side;
-    logger.debug('Show arrows for side:', side);
+    logger.debug("Show arrows for side:", side);
     // Re-analyze if arrows are enabled
     if (this.showMoveArrows) {
       this._analyzedLegalMoves = {};
@@ -845,7 +897,10 @@ export class BoardViewModel {
       return;
     }
 
-    if (this.analyzedLegalMovesFen === this.fen && Object.keys(this._analyzedLegalMoves).length > 0) {
+    if (
+      this.analyzedLegalMovesFen === this.fen &&
+      Object.keys(this._analyzedLegalMoves).length > 0
+    ) {
       return;
     }
 
@@ -874,10 +929,13 @@ export class BoardViewModel {
         this.fen,
         configViewModel.depth,
         configViewModel.multiPV,
-        'background',
+        "background",
       );
 
-      if (analysis.ignored || !canApplyAnalyzedMove(this.fen, analysis.analyzedFen)) {
+      if (
+        analysis.ignored ||
+        !canApplyAnalyzedMove(this.fen, analysis.analyzedFen)
+      ) {
         runInAction(() => {
           this.isAnalyzingMoves = false;
         });
@@ -886,7 +944,9 @@ export class BoardViewModel {
 
       // Create a map of UCI moves to their quality buckets
       const moveMap = mapLegalMovesToBuckets(
-        legalMoves.map(move => `${move.from}${move.to}${move.promotion || ''}`),
+        legalMoves.map(
+          (move) => `${move.from}${move.to}${move.promotion || ""}`,
+        ),
         analysis.moves,
         featureOptionsViewModel.useImprovedMoveClassification,
       );
@@ -897,9 +957,9 @@ export class BoardViewModel {
       });
 
       this.analyzedLegalMovesFen = this.fen;
-      logger.debug('Analyzed', Object.keys(moveMap).length, 'legal moves');
+      logger.debug("Analyzed", Object.keys(moveMap).length, "legal moves");
     } catch (err) {
-      logger.error('Failed to analyze moves:', err);
+      logger.error("Failed to analyze moves:", err);
       runInAction(() => {
         this.isAnalyzingMoves = false;
       });
@@ -929,7 +989,9 @@ export class BoardViewModel {
         // The move we just made is the last one in history
         // We need to analyze the position before it
         // chess.js history verbose includes 'before' and 'after' FEN
-        const lastMoveInHistory = history[history.length - 1] as Move & { before?: string };
+        const lastMoveInHistory = history[history.length - 1] as Move & {
+          before?: string;
+        };
         const beforeFen = lastMoveInHistory.before || this.fen;
 
         // Analyze the position before the move
@@ -937,27 +999,27 @@ export class BoardViewModel {
           beforeFen,
           Math.min(configViewModel.depth, 15), // Use smaller depth for faster analysis
           configViewModel.multiPV,
-          'background',
+          "background",
         );
 
         if (
-          analysis.ignored
-          || !canApplyAnalyzedMove(beforeFen, analysis.analyzedFen)
-          || this.fen !== expectedAfterFen
+          analysis.ignored ||
+          !canApplyAnalyzedMove(beforeFen, analysis.analyzedFen) ||
+          this.fen !== expectedAfterFen
         ) {
           return;
         }
 
         // Find the move in the analyzed moves
-        const moveUCI = `${move.from}${move.to}${move.promotion || ''}`;
-        const analyzedMove = analysis.moves.find(m => m.move === moveUCI);
+        const moveUCI = `${move.from}${move.to}${move.promotion || ""}`;
+        const analyzedMove = analysis.moves.find((m) => m.move === moveUCI);
         if (analyzedMove) {
           runInAction(() => {
             this.lastPlayerMoveQuality = analyzedMove.bucket;
             const qualityLabel = BUCKET_LABELS[analyzedMove.bucket];
             this.statusMessage = `You played: ${move.san} (${qualityLabel})`;
             this.publishMoveFeedback({
-              actor: 'player',
+              actor: "player",
               move,
               isBrilliant: false,
               qualityLabel,
@@ -965,36 +1027,36 @@ export class BoardViewModel {
               silent: true,
             });
           });
-          logger.debug('Player move quality:', analyzedMove.bucket);
+          logger.debug("Player move quality:", analyzedMove.bucket);
         } else {
           runInAction(() => {
             if (featureOptionsViewModel.useImprovedMoveClassification) {
-              this.lastPlayerMoveQuality = 'fallback';
+              this.lastPlayerMoveQuality = "fallback";
               this.statusMessage = `You played: ${move.san} (Fallback move)`;
               this.publishMoveFeedback({
-                actor: 'player',
+                actor: "player",
                 move,
                 isBrilliant: false,
-                qualityLabel: 'Fallback move',
-                bucket: 'fallback',
+                qualityLabel: "Fallback move",
+                bucket: "fallback",
                 silent: true,
               });
             } else {
-              this.lastPlayerMoveQuality = 'good';
+              this.lastPlayerMoveQuality = "good";
               this.statusMessage = `You played: ${move.san} (Good)`;
               this.publishMoveFeedback({
-                actor: 'player',
+                actor: "player",
                 move,
                 isBrilliant: false,
-                qualityLabel: 'Good',
-                bucket: 'good',
+                qualityLabel: "Good",
+                bucket: "good",
                 silent: true,
               });
             }
           });
         }
       } catch (err) {
-        logger.error('Failed to analyze player move:', err);
+        logger.error("Failed to analyze player move:", err);
         // Don't update status on error, keep the original message
       }
     }, 100);
@@ -1007,10 +1069,12 @@ export class BoardViewModel {
       this._playerMoveAnalysisTimeout = null;
 
       const autoPlayPending =
-        this.autoPlayEnabled
-        && !this.autoPlayPaused
-        && !this.isGameOver
-        && (this.isThinking || this.isAutoPlayCountingDown || this.turn === this.enginePlaysFor);
+        this.autoPlayEnabled &&
+        !this.autoPlayPaused &&
+        !this.isGameOver &&
+        (this.isThinking ||
+          this.isAutoPlayCountingDown ||
+          this.turn === this.enginePlaysFor);
 
       if (autoPlayPending) {
         this._playerMoveAnalysisTimeout = setTimeout(attemptAnalysis, 150);
@@ -1029,28 +1093,40 @@ export class BoardViewModel {
    * Only shows arrows for Excellent, Good, Mistake, and Blunder moves
    * Limited to maximum 3 arrows per quality bucket
    */
-  get moveArrows(): Array<{ startSquare: string; endSquare: string; color: string }> {
-    if (!this.showMoveArrows || Object.keys(this._analyzedLegalMoves).length === 0) {
+  get moveArrows(): Array<{
+    startSquare: string;
+    endSquare: string;
+    color: string;
+  }> {
+    if (
+      !this.showMoveArrows ||
+      Object.keys(this._analyzedLegalMoves).length === 0
+    ) {
       return [];
     }
 
     // Only show arrows for these specific move qualities
-    const allowedBuckets: MoveBucket[] = ['excellent', 'good', 'mistake', 'blunder'];
+    const allowedBuckets: MoveBucket[] = [
+      "excellent",
+      "good",
+      "mistake",
+      "blunder",
+    ];
     const maxArrowsPerBucket = 3;
 
     let legalMoves = this.allLegalMoves;
 
     // Filter moves by side if needed
-    if (this.showArrowsForSide === 'player') {
+    if (this.showArrowsForSide === "player") {
       // Show moves for the side that the engine is NOT playing for
-      const playerSide = this.enginePlaysFor === 'w' ? 'b' : 'w';
-      legalMoves = legalMoves.filter(move => {
+      const playerSide = this.enginePlaysFor === "w" ? "b" : "w";
+      legalMoves = legalMoves.filter((move) => {
         const piece = this.getPieceAt(move.from);
         return piece && piece.color === playerSide;
       });
-    } else if (this.showArrowsForSide === 'engine') {
+    } else if (this.showArrowsForSide === "engine") {
       // Show moves for the side that the engine IS playing for
-      legalMoves = legalMoves.filter(move => {
+      legalMoves = legalMoves.filter((move) => {
         const piece = this.getPieceAt(move.from);
         return piece && piece.color === this.enginePlaysFor;
       });
@@ -1059,12 +1135,15 @@ export class BoardViewModel {
 
     // Helper function to validate square format (a-h, 1-8)
     const isValidSquare = (square: unknown): square is Square => {
-      if (!square || typeof square !== 'string') return false;
+      if (!square || typeof square !== "string") return false;
       return /^[a-h][1-8]$/.test(square);
     };
 
     // Group moves by bucket
-    const movesByBucket: Record<MoveBucket, Array<{ startSquare: string; endSquare: string; color: string }>> = {
+    const movesByBucket: Record<
+      MoveBucket,
+      Array<{ startSquare: string; endSquare: string; color: string }>
+    > = {
       excellent: [],
       good: [],
       mistake: [],
@@ -1078,15 +1157,21 @@ export class BoardViewModel {
     for (const move of legalMoves) {
       // Validate that move has valid from and to squares
       if (!isValidSquare(move.from) || !isValidSquare(move.to)) {
-        logger.debug('Skipping invalid move:', move);
+        logger.debug("Skipping invalid move:", move);
         continue;
       }
 
-      const uci = `${move.from}${move.to}${move.promotion || ''}`;
+      const uci = `${move.from}${move.to}${move.promotion || ""}`;
       const bucket = this._analyzedLegalMoves[uci];
-      
+
       // Only include moves from allowed buckets
-      if (bucket && bucket !== 'fallback' && allowedBuckets.includes(bucket) && isValidSquare(move.from) && isValidSquare(move.to)) {
+      if (
+        bucket &&
+        bucket !== "fallback" &&
+        allowedBuckets.includes(bucket) &&
+        isValidSquare(move.from) &&
+        isValidSquare(move.to)
+      ) {
         movesByBucket[bucket].push({
           startSquare: move.from,
           endSquare: move.to,
@@ -1096,14 +1181,20 @@ export class BoardViewModel {
     }
 
     // Limit to max 3 arrows per bucket and combine
-    const arrows: Array<{ startSquare: string; endSquare: string; color: string }> = [];
+    const arrows: Array<{
+      startSquare: string;
+      endSquare: string;
+      color: string;
+    }> = [];
     for (const bucket of allowedBuckets) {
       const bucketArrows = movesByBucket[bucket].slice(0, maxArrowsPerBucket);
       arrows.push(...bucketArrows);
-      logger.debug(`Added ${bucketArrows.length} ${bucket} arrows (found ${movesByBucket[bucket].length} total)`);
+      logger.debug(
+        `Added ${bucketArrows.length} ${bucket} arrows (found ${movesByBucket[bucket].length} total)`,
+      );
     }
 
-    logger.debug('Generated', arrows.length, 'total arrows');
+    logger.debug("Generated", arrows.length, "total arrows");
     return arrows;
   }
 
@@ -1116,8 +1207,10 @@ export class BoardViewModel {
 
   /**
    * Get current turn (white/black)
+   * Reads `fen` so MobX recomputes when the board updates (chess.js mutates in place).
    */
-  get turn(): 'w' | 'b' {
+  get turn(): "w" | "b" {
+    void this.fen;
     return this.chess.turn();
   }
 
@@ -1125,7 +1218,7 @@ export class BoardViewModel {
    * Get turn as string
    */
   get turnString(): string {
-    return this.turn === 'w' ? 'White' : 'Black';
+    return this.turn === "w" ? "White" : "Black";
   }
 
   /**
@@ -1168,13 +1261,13 @@ export class BoardViewModel {
    */
   get gameStatus(): string {
     if (this.isCheckmate) {
-      return `Checkmate! ${this.turn === 'w' ? 'Black' : 'White'} wins`;
+      return `Checkmate! ${this.turn === "w" ? "Black" : "White"} wins`;
     }
     if (this.isStalemate) {
-      return 'Stalemate!';
+      return "Stalemate!";
     }
     if (this.isDraw) {
-      return 'Draw!';
+      return "Draw!";
     }
     if (this.isCheck) {
       return `${this.turnString} is in check`;
@@ -1214,12 +1307,12 @@ export class BoardViewModel {
    * Undo a single move (for the new undo button)
    */
   undoSingle(): boolean {
-    logger.debug('undoSingle called, history length:', this.history.length);
-    
+    logger.debug("undoSingle called, history length:", this.history.length);
+
     if (this.history.length === 0) {
       return false;
     }
-    
+
     const move = this.chess.undo();
     if (move) {
       // Add to redo stack
@@ -1230,24 +1323,27 @@ export class BoardViewModel {
       }
       this.syncBrilliantTrackingFromAnnotations();
       this.updateState();
-      
+
       // Update lastMove if there are still moves in history
       if (this.history.length > 0) {
         const lastMoveInHistory = this.history[this.history.length - 1];
-        this.lastMove = { from: lastMoveInHistory.from as Square, to: lastMoveInHistory.to as Square };
+        this.lastMove = {
+          from: lastMoveInHistory.from as Square,
+          to: lastMoveInHistory.to as Square,
+        };
       } else {
         this.lastMove = null;
       }
-      
+
       this.lastPlayedBucket = null;
-      this.statusMessage = 'Undid 1 move';
+      this.statusMessage = "Undid 1 move";
       this.clearAutoPlaySchedule();
       this.clearPendingPlayerMoveAnalysis();
       engineViewModel.reset();
-      logger.debug('Undid 1 move, redo stack size:', this.redoStack.length);
+      logger.debug("Undid 1 move, redo stack size:", this.redoStack.length);
       return true;
     }
-    
+
     return false;
   }
 
@@ -1255,28 +1351,28 @@ export class BoardViewModel {
    * Redo a single move
    */
   redoSingle(): boolean {
-    logger.debug('redoSingle called, redo stack size:', this.redoStack.length);
-    
+    logger.debug("redoSingle called, redo stack size:", this.redoStack.length);
+
     if (this.redoStack.length === 0) {
       return false;
     }
-    
+
     const moveToRedo = this.redoStack.pop();
     if (!moveToRedo) {
       return false;
     }
     const annotationToRedo = this.redoAnnotations.pop();
-    
+
     try {
       const move = this.chess.move({
         from: moveToRedo.from as Square,
         to: moveToRedo.to as Square,
         promotion: moveToRedo.promotion,
       });
-      
+
       if (move) {
         this.historyAnnotations.push(
-          annotationToRedo ?? this.createMoveAnnotation(move, false, 'redo'),
+          annotationToRedo ?? this.createMoveAnnotation(move, false, "redo"),
         );
         this.syncBrilliantTrackingFromAnnotations();
         this.updateState();
@@ -1284,31 +1380,35 @@ export class BoardViewModel {
         this.lastPlayedBucket = null;
         this.statusMessage = `Redid: ${move.san}`;
         this.publishMoveFeedback({
-          actor: 'redo',
+          actor: "redo",
           move,
           isBrilliant: annotationToRedo?.consumedBrilliant ?? false,
         });
         this.clearPendingPlayerMoveAnalysis();
         engineViewModel.reset();
-        logger.debug('Redid 1 move');
-        
+        logger.debug("Redid 1 move");
+
         // If auto-play is enabled and it's now the engine's turn, trigger auto-play
-        if (this.autoPlayEnabled && !this.isGameOver && this.chess.turn() === this.enginePlaysFor) {
-          logger.debug('Scheduling auto-play after redo');
+        if (
+          this.autoPlayEnabled &&
+          !this.isGameOver &&
+          this.chess.turn() === this.enginePlaysFor
+        ) {
+          logger.debug("Scheduling auto-play after redo");
           this.scheduleAutoPlayMove();
         }
-        
+
         return true;
       }
     } catch (err) {
-      logger.error('Redo failed:', err);
+      logger.error("Redo failed:", err);
       // Put the move back on the stack if it failed
       this.redoStack.push(moveToRedo);
       if (annotationToRedo) {
         this.redoAnnotations.push(annotationToRedo);
       }
     }
-    
+
     return false;
   }
 
@@ -1327,15 +1427,17 @@ export class BoardViewModel {
   }
 
   get autoPlayCurrentSideLabel(): string {
-    return this.enginePlaysFor === 'w' ? 'White' : 'Black';
+    return this.enginePlaysFor === "w" ? "White" : "Black";
   }
 
   get canStartAutoPlayTurn(): boolean {
-    return this.autoPlayEnabled
-      && !this.autoPlayPaused
-      && !this.isThinking
-      && !this.isGameOver
-      && this.turn === this.enginePlaysFor;
+    return (
+      this.autoPlayEnabled &&
+      !this.autoPlayPaused &&
+      !this.isThinking &&
+      !this.isGameOver &&
+      this.turn === this.enginePlaysFor
+    );
   }
 
   get isAutoPlayCountingDown(): boolean {
@@ -1348,13 +1450,22 @@ export class BoardViewModel {
       : 0;
   }
 
-  get moveHistoryRows(): Array<{ moveNumber: number; white: Move | null; black: Move | null }> {
-    const rows: Array<{ moveNumber: number; white: Move | null; black: Move | null }> = [];
+  get moveHistoryRows(): Array<{
+    moveNumber: number;
+    white: Move | null;
+    black: Move | null;
+  }> {
+    const rows: Array<{
+      moveNumber: number;
+      white: Move | null;
+      black: Move | null;
+    }> = [];
 
     for (let index = 0; index < this.history.length; index += 2) {
       const whiteMove = this.history[index] ?? null;
       const blackMove = this.history[index + 1] ?? null;
-      const moveNumber = whiteMove?.moveNumber ?? blackMove?.moveNumber ?? rows.length + 1;
+      const moveNumber =
+        whiteMove?.moveNumber ?? blackMove?.moveNumber ?? rows.length + 1;
       rows.push({
         moveNumber,
         white: whiteMove,
@@ -1374,8 +1485,14 @@ export class BoardViewModel {
   }
 
   get autoPlayActiveDurationMs(): number {
-    if (this.autoPlayEnabled && !this.autoPlayPaused && this.autoPlayLastResumedAt !== null) {
-      return this.autoPlayAccumulatedMs + (Date.now() - this.autoPlayLastResumedAt);
+    if (
+      this.autoPlayEnabled &&
+      !this.autoPlayPaused &&
+      this.autoPlayLastResumedAt !== null
+    ) {
+      return (
+        this.autoPlayAccumulatedMs + (Date.now() - this.autoPlayLastResumedAt)
+      );
     }
 
     return this.autoPlayAccumulatedMs;
@@ -1393,25 +1510,31 @@ export class BoardViewModel {
   }
 
   get lastPlayerMoveQualityLabel(): string | null {
-    return this.lastPlayerMoveQuality ? DISPLAY_BUCKET_LABELS[this.lastPlayerMoveQuality] : null;
+    return this.lastPlayerMoveQuality
+      ? DISPLAY_BUCKET_LABELS[this.lastPlayerMoveQuality]
+      : null;
   }
 
   get lastPlayerMoveQualityColor(): string | null {
-    return this.lastPlayerMoveQuality ? DISPLAY_BUCKET_COLORS[this.lastPlayerMoveQuality] : null;
+    return this.lastPlayerMoveQuality
+      ? DISPLAY_BUCKET_COLORS[this.lastPlayerMoveQuality]
+      : null;
   }
 
   private wait(delayMs: number): Promise<void> {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       setTimeout(resolve, delayMs);
     });
   }
 
   private get canScheduleAutoPlay(): boolean {
-    return this.autoPlayEnabled
-      && !this.autoPlayPaused
-      && !this.isThinking
-      && !this.isGameOver
-      && this.turn === this.enginePlaysFor;
+    return (
+      this.autoPlayEnabled &&
+      !this.autoPlayPaused &&
+      !this.isThinking &&
+      !this.isGameOver &&
+      this.turn === this.enginePlaysFor
+    );
   }
 
   private beginSessionState(options: {
@@ -1427,13 +1550,14 @@ export class BoardViewModel {
     this.gameSessionId = options.gameSessionId;
     this.gameStartFen = options.gameStartFen;
     this.sessionStartedAt = Date.now();
-    this.currentSetupName = options.setupName ?? 'Custom Position';
-    this.currentSetupCategory = options.setupCategory ?? 'custom';
+    this.currentSetupName = options.setupName ?? "Custom Position";
+    this.currentSetupCategory = options.setupCategory ?? "custom";
     this.historyAnnotations = [...(options.historyAnnotations ?? [])];
     this.redoAnnotations = [...(options.redoAnnotations ?? [])];
     this.redoStack = this.createRedoStackFromAnnotations(this.redoAnnotations);
     this.autoPlayAccumulatedMs = 0;
-    this.autoPlayLastResumedAt = this.autoPlayEnabled && !this.autoPlayPaused ? Date.now() : null;
+    this.autoPlayLastResumedAt =
+      this.autoPlayEnabled && !this.autoPlayPaused ? Date.now() : null;
     this.clearAutoPlaySchedule();
     if (options.resetBrilliantTracking) {
       featureOptionsViewModel.resetBrilliantTracking(this.gameSessionId);
@@ -1450,14 +1574,16 @@ export class BoardViewModel {
   private createMoveAnnotation(
     move: Move & { before?: string; after?: string },
     consumedBrilliant: boolean,
-    actor: 'player' | 'engine' | 'redo',
+    actor: "player" | "engine" | "redo",
   ): MoveAnnotation {
     const timestamp = Date.now();
-    const previousTimestamp = this.historyAnnotations[this.historyAnnotations.length - 1]?.timestamp ?? this.sessionStartedAt;
+    const previousTimestamp =
+      this.historyAnnotations[this.historyAnnotations.length - 1]?.timestamp ??
+      this.sessionStartedAt;
     return {
       beforeFen: move.before ?? this.fen,
       afterFen: move.after ?? this.chess.fen(),
-      uci: `${move.from}${move.to}${move.promotion || ''}`,
+      uci: `${move.from}${move.to}${move.promotion || ""}`,
       moveNumber: this.chess.moveNumber(),
       consumedBrilliant,
       actor,
@@ -1470,9 +1596,11 @@ export class BoardViewModel {
   private recordMoveAnnotation(
     move: Move & { before?: string; after?: string },
     consumedBrilliant: boolean,
-    actor: 'player' | 'engine' | 'redo',
+    actor: "player" | "engine" | "redo",
   ): void {
-    this.historyAnnotations.push(this.createMoveAnnotation(move, consumedBrilliant, actor));
+    this.historyAnnotations.push(
+      this.createMoveAnnotation(move, consumedBrilliant, actor),
+    );
     this.syncBrilliantTrackingFromAnnotations();
   }
 
@@ -1484,20 +1612,43 @@ export class BoardViewModel {
     );
   }
 
-  private scheduleAutoPlayMove(delayMs = uiStateViewModel.autoPlayDelayMs): void {
+  private scheduleAutoPlayMove(
+    delayMs = uiStateViewModel.autoPlayDelayMs,
+  ): void {
+    logger.debug("scheduleAutoPlayMove called", { delayMs });
     this.clearAutoPlaySchedule();
 
     if (!this.canScheduleAutoPlay) {
+      logger.debug("scheduleAutoPlayMove not scheduling, not in a valid state");
+      /**
+       * 
+       * this.autoPlayEnabled &&
+      !this.autoPlayPaused &&
+      !this.isThinking &&
+      !this.isGameOver &&
+      this.turn === this.enginePlaysFor
+      
+       */
+      logger.debug("canScheduleAutoPlay:", this.canScheduleAutoPlay);
+      logger.debug("autoPlayEnabled:", this.autoPlayEnabled);
+      logger.debug("autoPlayPaused:", this.autoPlayPaused);
+      logger.debug("isThinking:", this.isThinking);
+      logger.debug("isGameOver:", this.isGameOver);
+      logger.debug("turn:", this.turn);
+      logger.debug("enginePlaysFor:", this.enginePlaysFor);
       return;
     }
 
+    logger.debug("scheduleAutoPlayMove scheduling, in a valid state");
     this.autoPlayScheduledFor = Date.now() + delayMs;
     this._autoPlayTimeout = setTimeout(() => {
       runInAction(() => {
+        logger.debug("scheduleAutoPlayMove timeout action");
         this.autoPlayScheduledFor = 0;
       });
-      this.solveNextMove(true).catch(err => {
-        logger.error('Auto-play error:', err);
+      this.solveNextMove(true).catch((err) => {
+        logger.debug("scheduleAutoPlayMove timeout error", err);
+        logger.error("Auto-play error:", err);
       });
     }, delayMs);
   }
@@ -1551,7 +1702,11 @@ export class BoardViewModel {
   }
 
   private startAutoPlayDurationTracking(): void {
-    if (this.autoPlayEnabled && !this.autoPlayPaused && this.autoPlayLastResumedAt === null) {
+    if (
+      this.autoPlayEnabled &&
+      !this.autoPlayPaused &&
+      this.autoPlayLastResumedAt === null
+    ) {
       this.autoPlayLastResumedAt = Date.now();
     }
   }
@@ -1570,7 +1725,7 @@ export class BoardViewModel {
   }
 
   private publishMoveFeedback(options: {
-    actor: 'player' | 'engine' | 'redo';
+    actor: "player" | "engine" | "redo";
     move: Move;
     isBrilliant: boolean;
     qualityLabel?: string | null;
@@ -1585,7 +1740,7 @@ export class BoardViewModel {
       bucket: options.bucket ?? null,
       isBrilliant: options.isBrilliant,
       isCapture: options.move.isCapture(),
-      isCheck: options.move.san.includes('+') || options.move.san.includes('#'),
+      isCheck: options.move.san.includes("+") || options.move.san.includes("#"),
       isGameEnd: this.isGameOver,
       silent: options.silent ?? false,
       createdAt: Date.now(),
@@ -1599,7 +1754,11 @@ export class BoardViewModel {
     for (let index = 0; index < count; index += 1) {
       const move = this.chess.undo();
       if (!move) {
-        for (let restoreIndex = undoneMoves.length - 1; restoreIndex >= 0; restoreIndex -= 1) {
+        for (
+          let restoreIndex = undoneMoves.length - 1;
+          restoreIndex >= 0;
+          restoreIndex -= 1
+        ) {
           const restoreMove = undoneMoves[restoreIndex];
           this.chess.move({
             from: restoreMove.from as Square,
@@ -1636,12 +1795,17 @@ export class BoardViewModel {
 
       const parsed = JSON.parse(saved) as Partial<PersistedBoardState>;
       return {
-        currentFen: parsed.currentFen ?? '',
+        currentFen: parsed.currentFen ?? "",
         fenHistory: Array.isArray(parsed.fenHistory) ? parsed.fenHistory : [],
         gameSessionId: parsed.gameSessionId ?? createGameSessionId(),
-        gameStartFen: parsed.gameStartFen ?? parsed.currentFen ?? new Chess().fen(),
-        historyAnnotations: Array.isArray(parsed.historyAnnotations) ? parsed.historyAnnotations : [],
-        redoAnnotations: Array.isArray(parsed.redoAnnotations) ? parsed.redoAnnotations : [],
+        gameStartFen:
+          parsed.gameStartFen ?? parsed.currentFen ?? new Chess().fen(),
+        historyAnnotations: Array.isArray(parsed.historyAnnotations)
+          ? parsed.historyAnnotations
+          : [],
+        redoAnnotations: Array.isArray(parsed.redoAnnotations)
+          ? parsed.redoAnnotations
+          : [],
       };
     } catch {
       return null;
@@ -1652,11 +1816,13 @@ export class BoardViewModel {
     try {
       localStorage.removeItem(this.BOARD_STATE_STORAGE_KEY);
     } catch (error) {
-      logger.error('Failed to clear board state storage:', error);
+      logger.error("Failed to clear board state storage:", error);
     }
   }
 
-  private createRedoStackFromAnnotations(annotations: MoveAnnotation[]): Move[] {
+  private createRedoStackFromAnnotations(
+    annotations: MoveAnnotation[],
+  ): Move[] {
     return annotations.map((annotation) => ({
       from: annotation.uci.slice(0, 2),
       to: annotation.uci.slice(2, 4),
