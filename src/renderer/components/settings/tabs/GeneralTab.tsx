@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { getOpeningById, PREDEFINED_OPENINGS } from '../../../../engine/openings';
-import { boardViewModel, uiStateViewModel } from '../../../../viewmodels';
+import { boardViewModel, gameSetupViewModel, uiStateViewModel } from '../../../../viewmodels';
 import { BOARD_SIZE_PRESET_PIXELS, BoardSizePreset } from '../../../../viewmodels/UiStateViewModel';
 import {
   SettingRow,
   SettingsButton,
   SettingsButtonGroup,
+  SettingsNumberInput,
   SettingsSection,
   SettingsSelect,
   SettingsSwitch,
@@ -29,6 +30,12 @@ const ENGINE_SIDE_OPTIONS = [
 ];
 
 const ANIMATION_OPTIONS = [
+  { label: 'Slow', value: 'slow' },
+  { label: 'Normal', value: 'normal' },
+  { label: 'Fast', value: 'fast' },
+];
+
+const AUTOPLAY_SPEED_OPTIONS = [
   { label: 'Slow', value: 'slow' },
   { label: 'Normal', value: 'normal' },
   { label: 'Fast', value: 'fast' },
@@ -123,11 +130,35 @@ export const GeneralTab: React.FC = observer(() => {
         />
         <SettingRow
           label="Sound"
-          description="Keep this ready for move and alert sounds in a future UI pass."
+          description="Enable lightweight desktop cues for moves, captures, checks, brilliant moves, and game end."
           control={(
             <SettingsSwitch
               checked={uiStateViewModel.soundEnabled}
               onCheckedChange={(checked) => uiStateViewModel.setSoundEnabled(checked)}
+            />
+          )}
+        />
+        <SettingRow
+          label="Mute"
+          description="Quickly silence all sounds without losing your saved volume level."
+          control={(
+            <SettingsSwitch
+              checked={uiStateViewModel.soundMuted}
+              onCheckedChange={(checked) => uiStateViewModel.setSoundMuted(checked)}
+              disabled={!uiStateViewModel.soundEnabled}
+            />
+          )}
+        />
+        <SettingRow
+          label="Volume"
+          description="Desktop-friendly master volume for the built-in sound set."
+          control={(
+            <SettingsNumberInput
+              value={uiStateViewModel.soundVolume}
+              onChange={(value) => uiStateViewModel.setSoundVolume(value)}
+              min={0}
+              max={100}
+              disabled={!uiStateViewModel.soundEnabled || uiStateViewModel.soundMuted}
             />
           )}
         />
@@ -171,15 +202,27 @@ export const GeneralTab: React.FC = observer(() => {
             />
           )}
         />
+        <SettingRow
+          label="Auto-play speed"
+          description="Control how quickly automatic responses start after a player move or redo."
+          control={(
+            <SettingsSelect
+              value={uiStateViewModel.autoPlaySpeed}
+              onValueChange={(value) => uiStateViewModel.setAutoPlaySpeed(value as 'slow' | 'normal' | 'fast')}
+              options={AUTOPLAY_SPEED_OPTIONS}
+              disabled={busy}
+            />
+          )}
+        />
       </SettingsSection>
 
       <SettingsSection
         title="Quick Opening"
-        description="Preserve the built-in opening loader without occupying permanent space in the main window."
+        description="Keep the built-in opening library compatible while routing the richer setup flow through the Game Setup modal."
       >
         <SettingRow
           label="Opening library"
-          description="Load one of the predefined openings directly into the board."
+          description="Pick a predefined opening, or jump into the full setup modal for tactics, endgames, FEN, and PGN."
           control={(
             <SettingsSelect
               value={selectedOpeningId}
@@ -194,6 +237,12 @@ export const GeneralTab: React.FC = observer(() => {
           )}
         />
         <SettingsButtonGroup>
+          <SettingsButton
+            disabled={busy}
+            onClick={() => gameSetupViewModel.openAtCategory('openings')}
+          >
+            Open Game Setup
+          </SettingsButton>
           <SettingsButton
             disabled={!selectedOpeningId || busy}
             onClick={() => {

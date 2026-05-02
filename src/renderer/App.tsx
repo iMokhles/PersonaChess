@@ -9,12 +9,16 @@ import { observer } from 'mobx-react-lite';
 import {
   ChessBoardComponent,
   DesktopToolbar,
+  GameSetupModal,
+  GameSummaryModal,
+  MoveFeedbackToast,
   MoveHistoryPanel,
   SettingsModal,
   StatusStrip,
 } from './components';
-import { configViewModel, engineViewModel, uiStateViewModel } from '../viewmodels';
+import { boardViewModel, configViewModel, engineViewModel, gameSetupViewModel, uiStateViewModel } from '../viewmodels';
 import { createDebugLogger } from '../shared/debug';
+import { playSoundEffect, SoundEffectKind } from './sound/soundEffects';
 import './App.css';
 
 const logger = createDebugLogger('App');
@@ -67,6 +71,113 @@ export const App: React.FC = observer(() => {
     };
   }, []);
 
+  useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+
+      return target.isContentEditable
+        || target.tagName === 'INPUT'
+        || target.tagName === 'TEXTAREA'
+        || target.tagName === 'SELECT';
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const meta = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+
+      if (key === 'escape') {
+        if (uiStateViewModel.settingsOpen) {
+          uiStateViewModel.setSettingsOpen(false);
+        }
+        if (gameSetupViewModel.open) {
+          gameSetupViewModel.setOpen(false);
+        }
+        return;
+      }
+
+      if (!meta || isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (key === 'z' && event.shiftKey) {
+        event.preventDefault();
+        boardViewModel.redoSingle();
+        return;
+      }
+
+      if (key === 'y') {
+        event.preventDefault();
+        boardViewModel.redoSingle();
+        return;
+      }
+
+      if (key === 'z') {
+        event.preventDefault();
+        boardViewModel.undoSingle();
+        return;
+      }
+
+      if (key === 'enter') {
+        event.preventDefault();
+        void boardViewModel.solveNextMove();
+        return;
+      }
+
+      if (key === ',') {
+        event.preventDefault();
+        uiStateViewModel.setSettingsOpen(true);
+        return;
+      }
+
+      if (key === 'o') {
+        event.preventDefault();
+        gameSetupViewModel.openAtCategory('openings');
+        return;
+      }
+
+      if (key === 'p' && event.shiftKey) {
+        event.preventDefault();
+        boardViewModel.toggleAutoPlayPause();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    const feedback = boardViewModel.recentMoveFeedback;
+    if (!feedback || feedback.silent) {
+      return;
+    }
+
+    let sound: SoundEffectKind = 'move';
+    if (feedback.isGameEnd) {
+      sound = 'game-end';
+    } else if (feedback.isBrilliant) {
+      sound = 'brilliant';
+    } else if (feedback.isCheck) {
+      sound = 'check';
+    } else if (feedback.isCapture) {
+      sound = 'capture';
+    }
+
+    void playSoundEffect(sound, {
+      enabled: uiStateViewModel.soundEnabled,
+      muted: uiStateViewModel.soundMuted,
+      volume: uiStateViewModel.effectiveSoundVolume,
+    });
+  }, [
+    boardViewModel.recentMoveFeedback,
+    uiStateViewModel.soundEnabled,
+    uiStateViewModel.soundMuted,
+    uiStateViewModel.effectiveSoundVolume,
+  ]);
+
   const boardSize = useMemo(
     () => getResponsiveBoardSize(uiStateViewModel.boardSizePx, viewportWidth),
     [uiStateViewModel.boardSizePx, viewportWidth],
@@ -87,6 +198,7 @@ export const App: React.FC = observer(() => {
         <section className="app-board-column">
           <div className="app-board-card" style={{ ['--board-size' as string]: `${boardSize}px` }}>
             <ChessBoardComponent boardWidth={boardSize} />
+            <MoveFeedbackToast />
           </div>
           <StatusStrip />
         </section>
@@ -97,6 +209,8 @@ export const App: React.FC = observer(() => {
       </main>
 
       <SettingsModal />
+      <GameSetupModal />
+      <GameSummaryModal />
     </div>
   );
 });

@@ -45,6 +45,28 @@
   color: var(--pc-text-muted);
 }
 
+.desktop-toolbar-persona-badge {
+  margin-left: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--pc-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--pc-accent) 24%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.desktop-toolbar-persona-badge span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pc-text-soft);
+}
+
+.desktop-toolbar-persona-badge strong {
+  font-size: 12px;
+}
+
 .desktop-toolbar-groups {
   display: flex;
   align-items: center;
@@ -104,6 +126,24 @@
   display: inline-flex;
   align-items: center;
   gap: 12px;
+}
+
+.desktop-toolbar-autoplay-meta {
+  min-width: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.desktop-toolbar-autoplay-meta span {
+  font-size: 10px;
+  color: var(--pc-text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.desktop-toolbar-autoplay-meta strong {
+  font-size: 12px;
 }
 
 .desktop-toolbar-switch-label {

@@ -1,0 +1,56 @@
+.move-feedback-toast {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 3;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--pc-accent) 22%, transparent);
+  background: color-mix(in srgb, var(--pc-bg-elevated) 90%, transparent);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.32);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  animation: moveToastIn 220ms ease;
+  backdrop-filter: blur(14px);
+}
+
+.move-feedback-toast strong {
+  font-size: 13px;
+}
+
+.move-feedback-toast span {
+  font-size: 11px;
+  color: var(--pc-text-muted);
+}
+
+.move-feedback-toast.engine {
+  border-color: color-mix(in srgb, var(--pc-accent) 26%, transparent);
+}
+
+.move-feedback-toast.player {
+  border-color: color-mix(in srgb, var(--pc-text) 10%, transparent);
+}
+
+.move-feedback-toast.brilliant {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--pc-accent) 24%, var(--pc-bg-elevated)),
+    color-mix(in srgb, var(--pc-accent) 8%, var(--pc-bg-elevated))
+  );
+  border-color: color-mix(in srgb, var(--pc-accent) 36%, transparent);
+  box-shadow: 0 18px 44px color-mix(in srgb, var(--pc-accent) 18%, transparent);
+}
+
+@keyframes moveToastIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

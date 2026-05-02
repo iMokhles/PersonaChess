@@ -535,3 +535,178 @@ test('persona profile import validates JSON safely and deduplicates names', asyn
   assert.equal(profiles.profiles[0]?.settings.currentPresetId, 'hard');
   assert.equal(profiles.profiles[0]?.settings.ui.themeMode, 'light');
 });
+
+test('game setup presets remain searchable and compatible with the existing opening library', async () => {
+  const { PREDEFINED_OPENINGS } = await import('../src/engine/openings');
+  const {
+    GAME_SETUP_PRESETS,
+    filterGameSetupPresets,
+    toCompatibleOpeningPreset,
+  } = await import('../src/engine/gameSetupPresets');
+
+  assert.ok(GAME_SETUP_PRESETS.length >= PREDEFINED_OPENINGS.length);
+
+  const filtered = filterGameSetupPresets(GAME_SETUP_PRESETS, 'openings', 'sicilian');
+  assert.equal(filtered.length, 1);
+  assert.match(filtered[0]?.name ?? '', /sicilian/i);
+
+  const openingPreset = toCompatibleOpeningPreset(PREDEFINED_OPENINGS[0]?.id ?? '');
+  assert.equal(openingPreset?.sourceType, 'pgn');
+  assert.equal(openingPreset?.source, PREDEFINED_OPENINGS[0]?.pgn);
+});
+
+test('loading a game setup preset resets session state and brilliant tracking', async () => {
+  localStorageMock.clear();
+
+  const { boardViewModel, featureOptionsViewModel } = await import('../src/viewmodels');
+  const { getGameSetupPresetById } = await import('../src/engine/gameSetupPresets');
+
+  boardViewModel.reset();
+  featureOptionsViewModel.resetToDefaults();
+  featureOptionsViewModel.setOption('useBrilliantMoveBudget', true);
+  featureOptionsViewModel.setBrilliantMovesPerGame(2);
+
+  const baselineSessionId = boardViewModel.debugSessionId;
+  await boardViewModel.makeMoveUCI('e2e4', { consumedBrilliant: true });
+  assert.equal(featureOptionsViewModel.brilliantUsedCount, 1);
+
+  const preset = getGameSetupPresetById('italian');
+  assert.ok(preset);
+  if (!preset) {
+    throw new Error('Expected italian preset to exist');
+  }
+  assert.equal(boardViewModel.loadGameSetupPreset(preset), true);
+  assert.notEqual(boardViewModel.debugSessionId, baselineSessionId);
+  assert.equal(featureOptionsViewModel.brilliantUsedCount, 0);
+  assert.match(boardViewModel.statusMessage, /italian/i);
+});
+
+test('game analytics summary aggregates quality, timing, complexity, and highlights', async () => {
+  const { buildGameAnalyticsSummary } = await import('../src/engine/gameAnalytics');
+
+  const summary = buildGameAnalyticsSummary({
+    sessionId: 'session_test',
+    createdAtMs: 1000,
+    finishedAtMs: 9000,
+    gameStatus: 'Checkmate! White wins',
+    personaId: 'aggressive',
+    personaLabel: 'Aggressive',
+    setupName: 'Italian Game',
+    setupCategory: 'openings',
+    autoplayDurationMs: 2600,
+    pgn: '1. e4 e5 *',
+    moveAnnotations: [
+      {
+        beforeFen: 'a',
+        afterFen: 'b',
+        uci: 'e2e4',
+        moveNumber: 1,
+        consumedBrilliant: false,
+        actor: 'player',
+        san: 'e4',
+        bucket: 'good',
+        evalLoss: 42,
+        evaluation: 18,
+        complexityLevel: 'medium',
+        complexityScore: 0.5,
+        timestamp: 2000,
+        delayMsSincePrevious: 700,
+      },
+      {
+        beforeFen: 'b',
+        afterFen: 'c',
+        uci: 'e7e5',
+        moveNumber: 1,
+        consumedBrilliant: true,
+        actor: 'engine',
+        san: 'e5+',
+        bucket: 'best',
+        evalLoss: 0,
+        evaluation: 32,
+        complexityLevel: 'high',
+        complexityScore: 0.8,
+        timestamp: 2800,
+        delayMsSincePrevious: 800,
+      },
+      {
+        beforeFen: 'c',
+        afterFen: 'd',
+        uci: 'g1f3',
+        moveNumber: 2,
+        consumedBrilliant: false,
+        actor: 'player',
+        san: 'Nf3',
+        bucket: 'mistake',
+        evalLoss: 310,
+        evaluation: -90,
+        complexityLevel: 'low',
+        complexityScore: 0.2,
+        timestamp: 4300,
+        delayMsSincePrevious: 1500,
+      },
+    ],
+  });
+
+  assert.equal(summary.result, 'White won');
+  assert.equal(summary.brilliantMoves, 1);
+  assert.equal(summary.moveCount, 3);
+  assert.equal(summary.qualityCounts.best, 1);
+  assert.equal(summary.qualityCounts.good, 1);
+  assert.equal(summary.qualityCounts.mistake, 1);
+  assert.equal(summary.averageEvalLoss, 117.3);
+  assert.equal(summary.averageMoveDelayMs, 1000);
+  assert.equal(summary.complexityDistribution.low, 1);
+  assert.equal(summary.complexityDistribution.medium, 1);
+  assert.equal(summary.complexityDistribution.high, 1);
+  assert.equal(summary.highlightedBrilliantMoves.length, 1);
+  assert.equal(summary.majorMistakes.length, 1);
+  assert.equal(summary.evalTrend.length, 3);
+  assert.equal(summary.complexityTrend.length, 3);
+});
+
+test('game analytics viewmodel stores completed sessions in recent games', async () => {
+  localStorageMock.clear();
+
+  const { GameAnalyticsViewModel } = await import('../src/viewmodels');
+
+  const analytics = new GameAnalyticsViewModel({
+    boardViewModel: {
+      debugSessionId: 'session_capture',
+      moveAnnotations: [
+        {
+          beforeFen: 'a',
+          afterFen: 'b',
+          uci: 'e2e4',
+          moveNumber: 1,
+          consumedBrilliant: false,
+          actor: 'player',
+          san: 'e4',
+          bucket: 'good',
+          evalLoss: 40,
+          evaluation: 15,
+          complexityLevel: 'medium',
+          complexityScore: 0.45,
+          timestamp: 1000,
+          delayMsSincePrevious: 600,
+        },
+      ],
+      sessionStartedAt: 0,
+      gameStatus: 'Draw!',
+      pgn: '1. e4 *',
+      currentSetupName: 'Custom Position',
+      currentSetupCategory: 'custom',
+      autoPlayActiveDurationMs: 900,
+      isGameOver: true,
+    },
+    configViewModel: {
+      activePersonaId: 'medium',
+      activePersonaLabel: 'Medium',
+    },
+  });
+
+  analytics.captureCompletedGame();
+
+  assert.equal(analytics.recentGames.length, 1);
+  assert.equal(analytics.recentGames[0]?.sessionId, 'session_capture');
+  assert.equal(analytics.recentGameEntries[0]?.personaLabel, 'Medium');
+});

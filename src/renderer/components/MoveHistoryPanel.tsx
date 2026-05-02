@@ -6,6 +6,7 @@ import './MoveHistoryPanel.css';
 export const MoveHistoryPanel: React.FC = observer(() => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const latestMove = boardViewModel.history[boardViewModel.history.length - 1] ?? null;
+  const latestFeedback = boardViewModel.recentMoveFeedback;
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -51,12 +52,14 @@ export const MoveHistoryPanel: React.FC = observer(() => {
             {boardViewModel.moveHistoryRows.map((row) => {
               const isLatestWhite = latestMove?.san === row.white?.san && latestMove?.color === row.white?.color;
               const isLatestBlack = latestMove?.san === row.black?.san && latestMove?.color === row.black?.color;
+              const isBrilliantWhite = isLatestWhite && latestFeedback?.san === row.white?.san && latestFeedback.isBrilliant;
+              const isBrilliantBlack = isLatestBlack && latestFeedback?.san === row.black?.san && latestFeedback.isBrilliant;
 
               return (
                 <div key={`${row.moveNumber}-${row.white?.san ?? '...'}-${row.black?.san ?? '...'}`} className="move-history-row">
                   <span className="move-history-number">{row.moveNumber}.</span>
-                  <span className={`move-history-move ${isLatestWhite ? 'current' : ''}`}>{row.white?.san ?? '—'}</span>
-                  <span className={`move-history-move ${isLatestBlack ? 'current' : ''}`}>{row.black?.san ?? '—'}</span>
+                  <span className={`move-history-move ${isLatestWhite ? 'current' : ''} ${isBrilliantWhite ? 'brilliant' : ''}`}>{row.white?.san ?? '—'}</span>
+                  <span className={`move-history-move ${isLatestBlack ? 'current' : ''} ${isBrilliantBlack ? 'brilliant' : ''}`}>{row.black?.san ?? '—'}</span>
                 </div>
               );
             })}

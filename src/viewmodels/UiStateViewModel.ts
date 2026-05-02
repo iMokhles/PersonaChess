@@ -13,6 +13,7 @@ type SettingsTabId =
 type AnimationSpeed = 'slow' | 'normal' | 'fast';
 type ThemeMode = 'dark' | 'light' | 'minimal' | 'persona';
 type BoardSizePreset = 'small' | 'medium' | 'large' | 'xlarge';
+type AutoPlaySpeed = 'slow' | 'normal' | 'fast';
 
 const BOARD_SIZE_PRESET_PIXELS: Record<BoardSizePreset, number> = {
   small: 480,
@@ -25,6 +26,9 @@ interface PersistedUiPreferences {
   basicMode: boolean;
   animationSpeed: AnimationSpeed;
   soundEnabled: boolean;
+  soundMuted: boolean;
+  soundVolume: number;
+  autoPlaySpeed: AutoPlaySpeed;
   themeMode: ThemeMode;
   boardSizePreset: BoardSizePreset;
   selectedSettingsTab: SettingsTabId;
@@ -35,19 +39,29 @@ const UI_PREFERENCES_STORAGE_KEY = 'personachess_ui_preferences';
 const DEFAULT_UI_PREFERENCES: PersistedUiPreferences = {
   basicMode: true,
   animationSpeed: 'normal',
-  soundEnabled: false,
+  soundEnabled: true,
+  soundMuted: false,
+  soundVolume: 70,
+  autoPlaySpeed: 'normal',
   themeMode: 'dark',
   boardSizePreset: 'medium',
   selectedSettingsTab: 'general',
 };
 
+const AUTO_PLAY_SPEED_DELAYS: Record<AutoPlaySpeed, number> = {
+  slow: 1200,
+  normal: 700,
+  fast: 350,
+};
+
 export class UiStateViewModel {
   settingsOpen = false;
-  loadFenOpen = false;
-  loadPgnOpen = false;
   basicMode = DEFAULT_UI_PREFERENCES.basicMode;
   animationSpeed = DEFAULT_UI_PREFERENCES.animationSpeed;
   soundEnabled = DEFAULT_UI_PREFERENCES.soundEnabled;
+  soundMuted = DEFAULT_UI_PREFERENCES.soundMuted;
+  soundVolume = DEFAULT_UI_PREFERENCES.soundVolume;
+  autoPlaySpeed = DEFAULT_UI_PREFERENCES.autoPlaySpeed;
   themeMode = DEFAULT_UI_PREFERENCES.themeMode;
   boardSizePreset = DEFAULT_UI_PREFERENCES.boardSizePreset;
   selectedSettingsTab: SettingsTabId = DEFAULT_UI_PREFERENCES.selectedSettingsTab;
@@ -55,12 +69,13 @@ export class UiStateViewModel {
   constructor() {
     makeAutoObservable(this, {
       setSettingsOpen: action,
-      setLoadFenOpen: action,
-      setLoadPgnOpen: action,
       applyProfilePreferences: action,
       setBasicMode: action,
       setAnimationSpeed: action,
       setSoundEnabled: action,
+      setSoundMuted: action,
+      setSoundVolume: action,
+      setAutoPlaySpeed: action,
       setThemeMode: action,
       setBoardSizePreset: action,
       setSelectedSettingsTab: action,
@@ -71,14 +86,6 @@ export class UiStateViewModel {
 
   setSettingsOpen(open: boolean): void {
     this.settingsOpen = open;
-  }
-
-  setLoadFenOpen(open: boolean): void {
-    this.loadFenOpen = open;
-  }
-
-  setLoadPgnOpen(open: boolean): void {
-    this.loadPgnOpen = open;
   }
 
   applyProfilePreferences(preferences: Partial<Pick<PersistedUiPreferences, 'basicMode' | 'themeMode'>>): void {
@@ -99,6 +106,21 @@ export class UiStateViewModel {
 
   setSoundEnabled(enabled: boolean): void {
     this.soundEnabled = enabled;
+    this.persistToStorage();
+  }
+
+  setSoundMuted(muted: boolean): void {
+    this.soundMuted = muted;
+    this.persistToStorage();
+  }
+
+  setSoundVolume(volume: number): void {
+    this.soundVolume = Math.max(0, Math.min(100, Math.round(volume)));
+    this.persistToStorage();
+  }
+
+  setAutoPlaySpeed(speed: AutoPlaySpeed): void {
+    this.autoPlaySpeed = speed;
     this.persistToStorage();
   }
 
@@ -128,6 +150,11 @@ export class UiStateViewModel {
       this.basicMode = parsed.basicMode ?? DEFAULT_UI_PREFERENCES.basicMode;
       this.animationSpeed = parsed.animationSpeed ?? DEFAULT_UI_PREFERENCES.animationSpeed;
       this.soundEnabled = parsed.soundEnabled ?? DEFAULT_UI_PREFERENCES.soundEnabled;
+      this.soundMuted = parsed.soundMuted ?? DEFAULT_UI_PREFERENCES.soundMuted;
+      this.soundVolume = typeof parsed.soundVolume === 'number'
+        ? Math.max(0, Math.min(100, Math.round(parsed.soundVolume)))
+        : DEFAULT_UI_PREFERENCES.soundVolume;
+      this.autoPlaySpeed = parsed.autoPlaySpeed ?? DEFAULT_UI_PREFERENCES.autoPlaySpeed;
       this.themeMode = parsed.themeMode ?? DEFAULT_UI_PREFERENCES.themeMode;
       this.boardSizePreset = parsed.boardSizePreset ?? DEFAULT_UI_PREFERENCES.boardSizePreset;
       this.selectedSettingsTab = parsed.selectedSettingsTab ?? DEFAULT_UI_PREFERENCES.selectedSettingsTab;
@@ -144,6 +171,9 @@ export class UiStateViewModel {
           basicMode: this.basicMode,
           animationSpeed: this.animationSpeed,
           soundEnabled: this.soundEnabled,
+          soundMuted: this.soundMuted,
+          soundVolume: this.soundVolume,
+          autoPlaySpeed: this.autoPlaySpeed,
           themeMode: this.themeMode,
           boardSizePreset: this.boardSizePreset,
           selectedSettingsTab: this.selectedSettingsTab,
@@ -156,6 +186,18 @@ export class UiStateViewModel {
 
   get boardSizePx(): number {
     return BOARD_SIZE_PRESET_PIXELS[this.boardSizePreset];
+  }
+
+  get autoPlayDelayMs(): number {
+    return AUTO_PLAY_SPEED_DELAYS[this.autoPlaySpeed];
+  }
+
+  get effectiveSoundVolume(): number {
+    if (!this.soundEnabled || this.soundMuted) {
+      return 0;
+    }
+
+    return this.soundVolume / 100;
   }
 
   getPersonaAccentTone(personaId: MoveQualityPresetId | null): 'red' | 'gold' | 'blue' | 'green' {
@@ -178,4 +220,4 @@ export class UiStateViewModel {
 export const uiStateViewModel = new UiStateViewModel();
 
 export { BOARD_SIZE_PRESET_PIXELS };
-export type { AnimationSpeed, BoardSizePreset, SettingsTabId, ThemeMode };
+export type { AnimationSpeed, AutoPlaySpeed, BoardSizePreset, SettingsTabId, ThemeMode };

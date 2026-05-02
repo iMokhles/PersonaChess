@@ -1,0 +1,222 @@
+.game-setup-modal {
+  width: min(1080px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 32px));
+  border-radius: 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.game-setup-modal-header,
+.game-setup-modal-footer {
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--pc-border);
+}
+
+.game-setup-modal-footer {
+  border-bottom: 0;
+  border-top: 1px solid var(--pc-border);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.game-setup-modal-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.game-setup-sidebar {
+  border-right: 1px solid var(--pc-border);
+  background: color-mix(in srgb, var(--pc-bg-elevated) 92%, transparent);
+  padding: 16px;
+}
+
+.game-setup-category-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.game-setup-category-button {
+  border: 0;
+  border-radius: 12px;
+  min-height: 40px;
+  padding: 10px 12px;
+  text-align: left;
+  background: transparent;
+  color: var(--pc-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.game-setup-category-button.active {
+  background: var(--pc-accent-soft);
+  color: var(--pc-text);
+  transform: translateX(2px);
+}
+
+.game-setup-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 22px 20px;
+}
+
+.game-setup-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.game-setup-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.game-setup-list,
+.game-setup-details,
+.game-setup-custom-panel {
+  border-radius: 16px;
+  border: 1px solid var(--pc-border);
+  background: color-mix(in srgb, var(--pc-bg-elevated) 95%, transparent);
+}
+
+.game-setup-list {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-setup-list-item {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--pc-bg-muted);
+  color: var(--pc-text);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: background 160ms ease, transform 160ms ease, border-color 160ms ease;
+}
+
+.game-setup-list-item strong {
+  font-size: 13px;
+}
+
+.game-setup-list-item span {
+  font-size: 11px;
+  color: var(--pc-text-muted);
+}
+
+.game-setup-list-item.active {
+  background: var(--pc-accent-soft);
+  transform: translateY(-1px);
+}
+
+.game-setup-details,
+.game-setup-custom-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.game-setup-details-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.game-setup-meta-row {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--pc-text-muted);
+}
+
+.game-setup-description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--pc-text);
+}
+
+.game-setup-source-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pc-text-muted);
+}
+
+.game-setup-source-preview {
+  margin: 0;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--pc-bg-muted);
+  color: var(--pc-text);
+  min-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.game-setup-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.game-setup-empty {
+  height: 100%;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--pc-text-muted);
+  padding: 18px;
+}
+
+.game-setup-empty strong {
+  color: var(--pc-text);
+}
+
+@media (max-width: 980px) {
+  .game-setup-modal {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+  }
+
+  .game-setup-modal-body,
+  .game-setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .game-setup-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--pc-border);
+  }
+
+  .game-setup-category-list {
+    flex-direction: row;
+    overflow: auto;
+  }
+}

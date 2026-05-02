@@ -5,6 +5,8 @@ export interface PersistedBoardState {
   fenHistory: string[];
   gameSessionId: string;
   gameStartFen: string;
+  currentSetupName?: string;
+  currentSetupCategory?: string;
   historyAnnotations: MoveAnnotation[];
   redoAnnotations: MoveAnnotation[];
 }

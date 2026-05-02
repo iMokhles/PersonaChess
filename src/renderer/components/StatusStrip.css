@@ -61,6 +61,11 @@
   font-size: 12px;
 }
 
+.status-pill small {
+  font-size: 10px;
+  color: var(--pc-text-soft);
+}
+
 .status-pill.secondary {
   opacity: 0.86;
 }
@@ -68,6 +73,7 @@
 .status-pill.persona-pill {
   background: var(--pc-accent-soft);
   border-color: color-mix(in srgb, var(--pc-accent) 24%, transparent);
+  min-width: 112px;
 }
 
 .status-pill.quality-pill {

@@ -216,23 +216,31 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
   // Use optionSquares directly (exactly like example uses squareStyles)
   const squareStyles = useMemo(() => {
     const styles: Record<string, React.CSSProperties> = { ...optionSquares };
+    const feedback = boardViewModel.recentMoveFeedback;
     
     // Highlight last move (if not already highlighted by option squares)
     if (boardViewModel.lastMove && !moveFrom) {
       if (!styles[boardViewModel.lastMove.from]) {
         styles[boardViewModel.lastMove.from] = {
-          backgroundColor: 'rgba(255, 255, 0, 0.4)',
+          background:
+            'radial-gradient(circle at center, color-mix(in srgb, var(--pc-accent) 20%, transparent), color-mix(in srgb, var(--pc-accent) 8%, transparent))',
+          boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--pc-accent) 22%, transparent)',
         };
       }
       if (!styles[boardViewModel.lastMove.to]) {
         styles[boardViewModel.lastMove.to] = {
-          backgroundColor: 'rgba(255, 255, 0, 0.4)',
+          background: feedback?.isBrilliant
+            ? 'radial-gradient(circle at center, color-mix(in srgb, var(--pc-accent) 38%, transparent), color-mix(in srgb, var(--pc-accent) 16%, transparent))'
+            : 'radial-gradient(circle at center, color-mix(in srgb, var(--pc-accent) 24%, transparent), color-mix(in srgb, var(--pc-accent) 10%, transparent))',
+          boxShadow: feedback?.isBrilliant
+            ? 'inset 0 0 0 1px color-mix(in srgb, var(--pc-accent) 34%, transparent), 0 0 20px color-mix(in srgb, var(--pc-accent) 14%, transparent)'
+            : 'inset 0 0 0 1px color-mix(in srgb, var(--pc-accent) 24%, transparent)',
         };
       }
     }
 
     return styles;
-  }, [optionSquares, boardViewModel.lastMove, moveFrom]);
+  }, [optionSquares, boardViewModel.lastMove, boardViewModel.recentMoveFeedback, moveFrom]);
 
   // Get move arrows from ViewModel (memoized to prevent excessive re-renders)
   const moveArrows = useMemo(() => {
@@ -294,7 +302,7 @@ export const ChessBoardComponent: React.FC<ChessBoardProps> = observer(({
   // Render the chessboard - try options prop first
   return (
     <div className="chessboard-container">
-      <div className="board-wrapper">
+      <div className={`board-wrapper ${boardViewModel.recentMoveFeedback?.isBrilliant ? 'board-wrapper-brilliant' : ''}`}>
         <Chessboard options={chessboardOptions} />
       </div>
       

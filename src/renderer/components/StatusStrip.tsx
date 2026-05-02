@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import {
   boardViewModel,
@@ -9,10 +9,32 @@ import {
 import './StatusStrip.css';
 
 export const StatusStrip: React.FC = observer(() => {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!boardViewModel.isAutoPlayCountingDown) {
+      return undefined;
+    }
+
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 100);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [boardViewModel.autoPlayScheduledFor, boardViewModel.isAutoPlayCountingDown]);
+
   const analysisSource = engineViewModel.lastAnalysisPurpose
     ? (engineViewModel.lastAnalysisFromCache ? 'Cache' : 'Live')
     : 'Idle';
-  const autoplayState = boardViewModel.autoPlayEnabled ? 'Running' : 'Stopped';
+  const autoplayState = boardViewModel.autoPlayEnabled
+    ? boardViewModel.autoPlayPaused
+      ? 'Paused'
+      : boardViewModel.isAutoPlayCountingDown
+        ? `In ${Math.max(0, Math.ceil((boardViewModel.autoPlayScheduledFor - now) / 100) / 10).toFixed(1)}s`
+        : 'Running'
+    : 'Stopped';
   const brilliantState = featureOptionsViewModel.useBrilliantMoveBudget
     ? featureOptionsViewModel.hasRemainingBrilliantMoves
       ? `${featureOptionsViewModel.brilliantUsedCount}/${featureOptionsViewModel.brilliantMovesPerGame}`
@@ -33,6 +55,7 @@ export const StatusStrip: React.FC = observer(() => {
         <div className="status-pill persona-pill">
           <span className="status-pill-label">Persona</span>
           <strong>{configViewModel.activePersonaLabel}</strong>
+          <small>{boardViewModel.autoPlayCurrentSideLabel} side</small>
         </div>
         <div className="status-pill">
           <span className="status-pill-label">Engine</span>

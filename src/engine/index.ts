@@ -14,6 +14,8 @@ export * from './brilliantMove';
 export * from './brilliantTracking';
 export * from './featureOptions';
 export * from './gamePhase';
+export * from './gameAnalytics';
+export * from './gameSetupPresets';
 export * from './gameSession';
 export * from './personaProfiles';
 export * from './personaBias';

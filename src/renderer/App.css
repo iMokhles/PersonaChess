@@ -103,6 +103,7 @@
 }
 
 .app-board-card {
+  position: relative;
   min-height: 0;
   display: flex;
   justify-content: center;

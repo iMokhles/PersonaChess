@@ -8,6 +8,7 @@ import { Chess, Move, Square } from 'chess.js';
 import { canApplyAnalyzedMove } from '../engine/analysisSafety';
 import { deriveBrilliantUsage, MoveAnnotation } from '../engine/brilliantTracking';
 import { PersistedBoardState, createGameSessionId, resolvePgnStartFen } from '../engine/gameSession';
+import { GameSetupPreset } from '../engine/gameSetupPresets';
 import { engineViewModel } from './EngineViewModel';
 import { configViewModel } from './ConfigViewModel';
 import { featureOptionsViewModel } from './FeatureOptionsViewModel';
@@ -23,14 +24,30 @@ import {
 } from '../engine/types';
 import { calculateHumanDelayMs } from '../engine/personaBias';
 import { mapLegalMovesToBuckets } from '../engine/moveClassifier';
+import { uiStateViewModel } from './UiStateViewModel';
 
 const logger = createDebugLogger('BoardViewModel');
+
+export interface RecentMoveFeedback {
+  id: string;
+  actor: 'player' | 'engine' | 'redo';
+  san: string;
+  qualityLabel?: string | null;
+  bucket?: DisplayMoveBucket | MoveBucket | null;
+  isBrilliant: boolean;
+  isCapture: boolean;
+  isCheck: boolean;
+  isGameEnd: boolean;
+  silent: boolean;
+  createdAt: number;
+}
 
 export class BoardViewModel {
   private chess: Chess = new Chess();
   fen = this.chess.fen();
   gameStartFen = this.chess.fen();
   gameSessionId = createGameSessionId();
+  sessionStartedAt = Date.now();
   history: Move[] = [];
   lastMove: { from: Square; to: Square } | null = null;
   lastPlayedBucket: MoveBucket | null = null;
@@ -44,6 +61,13 @@ export class BoardViewModel {
   showArrowsForSide: 'current' | 'player' | 'engine' = 'current'; // Which side's moves to show arrows for
   lastPlayerMoveQuality: DisplayMoveBucket | null = null; // Quality of the last player move
   isAnalyzingMoves = false; // Whether we're currently analyzing moves
+  autoPlayPaused = false;
+  autoPlayScheduledFor = 0;
+  currentSetupName = 'New Game';
+  currentSetupCategory = 'custom';
+  recentMoveFeedback: RecentMoveFeedback | null = null;
+  autoPlayAccumulatedMs = 0;
+  autoPlayLastResumedAt: number | null = null;
   
   // Store analyzed moves as an object for MobX observability
   private _analyzedLegalMoves: Record<string, DisplayMoveBucket> = {};
@@ -52,6 +76,7 @@ export class BoardViewModel {
   private redoAnnotations: MoveAnnotation[] = [];
   private analyzedLegalMovesFen: string | null = null;
   private _analysisTimeout: NodeJS.Timeout | null = null; // Timeout for debouncing move analysis
+  private _autoPlayTimeout: NodeJS.Timeout | null = null;
   private readonly FEN_STORAGE_KEY = 'personachess_current_fen';
   private readonly FEN_HISTORY_KEY = 'personachess_fen_history';
   private readonly BOARD_STATE_STORAGE_KEY = 'personachess_board_state';
@@ -61,6 +86,7 @@ export class BoardViewModel {
     makeAutoObservable(this, {
       loadFen: action,
       loadPgn: action,
+      loadGameSetupPreset: action,
       makeMove: action,
       solveNextMove: action,
       reset: action,
@@ -68,6 +94,8 @@ export class BoardViewModel {
       undoSingle: action,
       redoSingle: action,
       setAutoPlay: action,
+      setAutoPlayPaused: action,
+      toggleAutoPlayPause: action,
       setEnginePlaysFor: action,
       flipBoard: action,
       setBoardFlipped: action,
@@ -103,8 +131,43 @@ export class BoardViewModel {
    * Set auto-play mode
    */
   setAutoPlay(enabled: boolean): void {
+    if (this.autoPlayEnabled && !enabled) {
+      this.stopAutoPlayDurationTracking();
+    }
+
     this.autoPlayEnabled = enabled;
+    if (!enabled) {
+      this.autoPlayPaused = false;
+      this.clearAutoPlaySchedule();
+    } else {
+      this.startAutoPlayDurationTracking();
+    }
+
+    if (enabled && this.canScheduleAutoPlay) {
+      this.scheduleAutoPlayMove();
+    } else if (this.canScheduleAutoPlay) {
+      this.clearAutoPlaySchedule();
+    }
     logger.debug('Auto-play set to:', enabled);
+  }
+
+  setAutoPlayPaused(paused: boolean): void {
+    if (paused) {
+      this.stopAutoPlayDurationTracking();
+    } else {
+      this.startAutoPlayDurationTracking();
+    }
+
+    this.autoPlayPaused = paused;
+    if (paused) {
+      this.clearAutoPlaySchedule();
+    } else if (this.canScheduleAutoPlay) {
+      this.scheduleAutoPlayMove();
+    }
+  }
+
+  toggleAutoPlayPause(): void {
+    this.setAutoPlayPaused(!this.autoPlayPaused);
   }
 
   /**
@@ -126,6 +189,8 @@ export class BoardViewModel {
       gameStartFen?: string;
       historyAnnotations?: MoveAnnotation[];
       redoAnnotations?: MoveAnnotation[];
+      setupName?: string;
+      setupCategory?: string;
     } = {},
   ): boolean {
     try {
@@ -135,6 +200,8 @@ export class BoardViewModel {
         gameStartFen,
         historyAnnotations,
         redoAnnotations,
+        setupName,
+        setupCategory,
       } = options;
       logger.debug('loadFen called:', fen);
       const newChess = new Chess(fen);
@@ -145,10 +212,15 @@ export class BoardViewModel {
         resetBrilliantTracking,
         historyAnnotations,
         redoAnnotations,
+        setupName,
+        setupCategory,
       });
       this.updateState();
       this.statusMessage = 'Position loaded';
       this.lastSkippedEngineMoveMessage = null;
+      this.clearAutoPlaySchedule();
+      this.autoPlayPaused = false;
+      this.recentMoveFeedback = null;
       engineViewModel.reset();
       logger.debug('FEN loaded successfully');
       return true;
@@ -164,10 +236,20 @@ export class BoardViewModel {
    */
   loadPgn(
     pgn: string,
-    options: { resetBrilliantTracking?: boolean; sessionId?: string } = {},
+    options: {
+      resetBrilliantTracking?: boolean;
+      sessionId?: string;
+      setupName?: string;
+      setupCategory?: string;
+    } = {},
   ): boolean {
     try {
-      const { resetBrilliantTracking = true, sessionId } = options;
+      const {
+        resetBrilliantTracking = true,
+        sessionId,
+        setupName,
+        setupCategory,
+      } = options;
       logger.debug('loadPgn called');
       const newChess = new Chess();
       newChess.loadPgn(pgn);
@@ -177,10 +259,15 @@ export class BoardViewModel {
         gameSessionId: sessionId ?? createGameSessionId(),
         gameStartFen,
         resetBrilliantTracking,
+        setupName,
+        setupCategory,
       });
       this.updateState();
       this.statusMessage = 'PGN loaded';
       this.lastSkippedEngineMoveMessage = null;
+      this.clearAutoPlaySchedule();
+      this.autoPlayPaused = false;
+      this.recentMoveFeedback = null;
       engineViewModel.reset();
       return true;
     } catch (err) {
@@ -188,6 +275,25 @@ export class BoardViewModel {
       this.statusMessage = `Invalid PGN: ${err}`;
       return false;
     }
+  }
+
+  loadGameSetupPreset(preset: GameSetupPreset): boolean {
+    const sideLabel = preset.side === 'white' ? 'White' : 'Black';
+    const loaded = preset.sourceType === 'fen'
+      ? this.loadFen(preset.source, {
+          setupName: preset.name,
+          setupCategory: preset.category,
+        })
+      : this.loadPgn(preset.source, {
+          setupName: preset.name,
+          setupCategory: preset.category,
+        });
+
+    if (loaded) {
+      this.statusMessage = `${preset.name} loaded (${sideLabel})`;
+    }
+
+    return loaded;
   }
 
   /**
@@ -210,12 +316,17 @@ export class BoardViewModel {
         logger.debug('Move successful:', move.san);
         // Clear redo stack when a new move is made
         this.clearRedoState();
-        this.recordMoveAnnotation(move, false);
+        this.recordMoveAnnotation(move, false, 'player');
         // Update the position state to trigger a re-render (via MobX observable)
         this.updateState();
         this.lastMove = { from, to };
         this.lastPlayedBucket = null;
         this.statusMessage = `You played: ${move.san}`;
+        this.publishMoveFeedback({
+          actor: 'player',
+          move,
+          isBrilliant: false,
+        });
         engineViewModel.reset();
         this.lastSkippedEngineMoveMessage = null;
         
@@ -228,11 +339,7 @@ export class BoardViewModel {
         // 3. It's now the engine's turn (the turn changed after the human move)
         if (this.autoPlayEnabled && !this.isGameOver && this.chess.turn() === this.enginePlaysFor) {
           logger.debug('Scheduling auto-play for engine side:', this.enginePlaysFor);
-          setTimeout(() => {
-            this.solveNextMove(true).catch(err => {
-              logger.error('Auto-play error:', err);
-            });
-          }, 500); // Similar delay to the example
+          this.scheduleAutoPlayMove();
         }
         
         // Return true as the move was successful
@@ -273,11 +380,16 @@ export class BoardViewModel {
       if (move) {
         // Clear redo stack when a new move is made
         this.clearRedoState();
-        this.recordMoveAnnotation(move, options.consumedBrilliant ?? false);
+        this.recordMoveAnnotation(move, options.consumedBrilliant ?? false, 'engine');
         this.updateState();
         this.lastMove = { from, to };
         this.lastPlayedBucket = null;
         this.statusMessage = `Engine played: ${move.san}`;
+        this.publishMoveFeedback({
+          actor: 'engine',
+          move,
+          isBrilliant: options.consumedBrilliant ?? false,
+        });
         engineViewModel.reset();
         return true;
       }
@@ -300,6 +412,7 @@ export class BoardViewModel {
       runInAction(() => {
         this.isThinking = true;
         this.statusMessage = 'Engine thinking...';
+        this.clearAutoPlaySchedule();
       });
 
       // Initialize engine if needed
@@ -370,6 +483,13 @@ export class BoardViewModel {
         });
         
         if (moveSuccess) {
+          this.updateLastAnnotation({
+            bucket: result.bucket,
+            evalLoss: result.move.evalLoss,
+            evaluation: result.move.evaluation,
+            complexityLevel: analysis.complexity.level,
+            complexityScore: analysis.complexity.score,
+          });
           runInAction(() => {
             this.lastPlayedBucket = result.bucket;
             this.statusMessage = result.isBrilliant
@@ -413,12 +533,17 @@ export class BoardViewModel {
       gameSessionId: createGameSessionId(),
       gameStartFen: this.chess.fen(),
       resetBrilliantTracking: true,
+      setupName: 'New Game',
+      setupCategory: 'custom',
     });
     this.updateState();
     this.lastMove = null;
     this.lastPlayedBucket = null;
     this.statusMessage = 'Board reset';
     this.lastSkippedEngineMoveMessage = null;
+    this.recentMoveFeedback = null;
+    this.clearAutoPlaySchedule();
+    this.autoPlayPaused = false;
     engineViewModel.reset();
     logger.debug('Board reset, new FEN:', this.fen);
   }
@@ -442,6 +567,7 @@ export class BoardViewModel {
           this.lastMove = null;
           this.lastPlayedBucket = null;
           this.statusMessage = 'Undid last 2 moves (human + engine)';
+          this.clearAutoPlaySchedule();
           engineViewModel.reset();
           logger.debug('Undid 2 moves');
           return true;
@@ -453,6 +579,7 @@ export class BoardViewModel {
           this.lastMove = null;
           this.lastPlayedBucket = null;
           this.statusMessage = 'Move undone';
+          this.clearAutoPlaySchedule();
           engineViewModel.reset();
           logger.debug('Undid 1 move');
           return true;
@@ -465,6 +592,7 @@ export class BoardViewModel {
         this.lastMove = null;
         this.lastPlayedBucket = null;
         this.statusMessage = 'Move undone';
+        this.clearAutoPlaySchedule();
         engineViewModel.reset();
         logger.debug('Undid 1 move');
         return true;
@@ -550,6 +678,8 @@ export class BoardViewModel {
           fenHistory: history,
           gameSessionId: this.gameSessionId,
           gameStartFen: this.gameStartFen,
+          currentSetupName: this.currentSetupName,
+          currentSetupCategory: this.currentSetupCategory,
           historyAnnotations: this.historyAnnotations,
           redoAnnotations: this.redoAnnotations,
         };
@@ -584,6 +714,8 @@ export class BoardViewModel {
               gameStartFen: restoredBoardState.gameStartFen,
               historyAnnotations: restoredBoardState.historyAnnotations,
               redoAnnotations: restoredBoardState.redoAnnotations,
+              setupName: restoredBoardState.currentSetupName,
+              setupCategory: restoredBoardState.currentSetupCategory,
             });
           } else {
             this.loadFen(savedFen, {
@@ -810,6 +942,14 @@ export class BoardViewModel {
             this.lastPlayerMoveQuality = analyzedMove.bucket;
             const qualityLabel = BUCKET_LABELS[analyzedMove.bucket];
             this.statusMessage = `You played: ${move.san} (${qualityLabel})`;
+            this.publishMoveFeedback({
+              actor: 'player',
+              move,
+              isBrilliant: false,
+              qualityLabel,
+              bucket: analyzedMove.bucket,
+              silent: true,
+            });
           });
           logger.debug('Player move quality:', analyzedMove.bucket);
         } else {
@@ -817,9 +957,25 @@ export class BoardViewModel {
             if (featureOptionsViewModel.useImprovedMoveClassification) {
               this.lastPlayerMoveQuality = 'fallback';
               this.statusMessage = `You played: ${move.san} (Fallback move)`;
+              this.publishMoveFeedback({
+                actor: 'player',
+                move,
+                isBrilliant: false,
+                qualityLabel: 'Fallback move',
+                bucket: 'fallback',
+                silent: true,
+              });
             } else {
               this.lastPlayerMoveQuality = 'good';
               this.statusMessage = `You played: ${move.san} (Good)`;
+              this.publishMoveFeedback({
+                actor: 'player',
+                move,
+                isBrilliant: false,
+                qualityLabel: 'Good',
+                bucket: 'good',
+                silent: true,
+              });
             }
           });
         }
@@ -1048,6 +1204,7 @@ export class BoardViewModel {
       
       this.lastPlayedBucket = null;
       this.statusMessage = 'Undid 1 move';
+      this.clearAutoPlaySchedule();
       engineViewModel.reset();
       logger.debug('Undid 1 move, redo stack size:', this.redoStack.length);
       return true;
@@ -1081,24 +1238,25 @@ export class BoardViewModel {
       
       if (move) {
         this.historyAnnotations.push(
-          annotationToRedo ?? this.createMoveAnnotation(move, false),
+          annotationToRedo ?? this.createMoveAnnotation(move, false, 'redo'),
         );
         this.syncBrilliantTrackingFromAnnotations();
         this.updateState();
         this.lastMove = { from: move.from as Square, to: move.to as Square };
         this.lastPlayedBucket = null;
         this.statusMessage = `Redid: ${move.san}`;
+        this.publishMoveFeedback({
+          actor: 'redo',
+          move,
+          isBrilliant: annotationToRedo?.consumedBrilliant ?? false,
+        });
         engineViewModel.reset();
         logger.debug('Redid 1 move');
         
         // If auto-play is enabled and it's now the engine's turn, trigger auto-play
         if (this.autoPlayEnabled && !this.isGameOver && this.chess.turn() === this.enginePlaysFor) {
           logger.debug('Scheduling auto-play after redo');
-          setTimeout(() => {
-            this.solveNextMove(true).catch(err => {
-              logger.error('Auto-play error after redo:', err);
-            });
-          }, 500);
+          this.scheduleAutoPlayMove();
         }
         
         return true;
@@ -1129,6 +1287,20 @@ export class BoardViewModel {
     return this.redoStack.length > 0;
   }
 
+  get autoPlayCurrentSideLabel(): string {
+    return this.enginePlaysFor === 'w' ? 'White' : 'Black';
+  }
+
+  get isAutoPlayCountingDown(): boolean {
+    return this.autoPlayScheduledFor > Date.now();
+  }
+
+  get autoPlayCountdownMsRemaining(): number {
+    return this.isAutoPlayCountingDown
+      ? Math.max(0, this.autoPlayScheduledFor - Date.now())
+      : 0;
+  }
+
   get moveHistoryRows(): Array<{ moveNumber: number; white: Move | null; black: Move | null }> {
     const rows: Array<{ moveNumber: number; white: Move | null; black: Move | null }> = [];
 
@@ -1148,6 +1320,18 @@ export class BoardViewModel {
 
   get debugSessionId(): string {
     return this.gameSessionId;
+  }
+
+  get moveAnnotations(): MoveAnnotation[] {
+    return this.historyAnnotations.map((annotation) => ({ ...annotation }));
+  }
+
+  get autoPlayActiveDurationMs(): number {
+    if (this.autoPlayEnabled && !this.autoPlayPaused && this.autoPlayLastResumedAt !== null) {
+      return this.autoPlayAccumulatedMs + (Date.now() - this.autoPlayLastResumedAt);
+    }
+
+    return this.autoPlayAccumulatedMs;
   }
 
   get hasSkippedEngineMoveNotice(): boolean {
@@ -1175,18 +1359,35 @@ export class BoardViewModel {
     });
   }
 
+  private get canScheduleAutoPlay(): boolean {
+    return this.autoPlayEnabled
+      && !this.autoPlayPaused
+      && !this.isThinking
+      && !this.isGameOver
+      && this.turn === this.enginePlaysFor;
+  }
+
   private beginSessionState(options: {
     gameSessionId: string;
     gameStartFen: string;
     resetBrilliantTracking: boolean;
     historyAnnotations?: MoveAnnotation[];
     redoAnnotations?: MoveAnnotation[];
+    setupName?: string;
+    setupCategory?: string;
   }): void {
+    this.stopAutoPlayDurationTracking();
     this.gameSessionId = options.gameSessionId;
     this.gameStartFen = options.gameStartFen;
+    this.sessionStartedAt = Date.now();
+    this.currentSetupName = options.setupName ?? 'Custom Position';
+    this.currentSetupCategory = options.setupCategory ?? 'custom';
     this.historyAnnotations = [...(options.historyAnnotations ?? [])];
     this.redoAnnotations = [...(options.redoAnnotations ?? [])];
     this.redoStack = this.createRedoStackFromAnnotations(this.redoAnnotations);
+    this.autoPlayAccumulatedMs = 0;
+    this.autoPlayLastResumedAt = this.autoPlayEnabled && !this.autoPlayPaused ? Date.now() : null;
+    this.clearAutoPlaySchedule();
     if (options.resetBrilliantTracking) {
       featureOptionsViewModel.resetBrilliantTracking(this.gameSessionId);
     } else {
@@ -1202,21 +1403,29 @@ export class BoardViewModel {
   private createMoveAnnotation(
     move: Move & { before?: string; after?: string },
     consumedBrilliant: boolean,
+    actor: 'player' | 'engine' | 'redo',
   ): MoveAnnotation {
+    const timestamp = Date.now();
+    const previousTimestamp = this.historyAnnotations[this.historyAnnotations.length - 1]?.timestamp ?? this.sessionStartedAt;
     return {
       beforeFen: move.before ?? this.fen,
       afterFen: move.after ?? this.chess.fen(),
       uci: `${move.from}${move.to}${move.promotion || ''}`,
       moveNumber: this.chess.moveNumber(),
       consumedBrilliant,
+      actor,
+      san: move.san,
+      timestamp,
+      delayMsSincePrevious: Math.max(0, timestamp - previousTimestamp),
     };
   }
 
   private recordMoveAnnotation(
     move: Move & { before?: string; after?: string },
     consumedBrilliant: boolean,
+    actor: 'player' | 'engine' | 'redo',
   ): void {
-    this.historyAnnotations.push(this.createMoveAnnotation(move, consumedBrilliant));
+    this.historyAnnotations.push(this.createMoveAnnotation(move, consumedBrilliant, actor));
     this.syncBrilliantTrackingFromAnnotations();
   }
 
@@ -1226,6 +1435,81 @@ export class BoardViewModel {
       this.gameSessionId,
       usage.brilliantMoveNumbers,
     );
+  }
+
+  private scheduleAutoPlayMove(delayMs = uiStateViewModel.autoPlayDelayMs): void {
+    this.clearAutoPlaySchedule();
+
+    if (!this.canScheduleAutoPlay) {
+      return;
+    }
+
+    this.autoPlayScheduledFor = Date.now() + delayMs;
+    this._autoPlayTimeout = setTimeout(() => {
+      runInAction(() => {
+        this.autoPlayScheduledFor = 0;
+      });
+      this.solveNextMove(true).catch(err => {
+        logger.error('Auto-play error:', err);
+      });
+    }, delayMs);
+  }
+
+  private clearAutoPlaySchedule(): void {
+    if (this._autoPlayTimeout) {
+      clearTimeout(this._autoPlayTimeout);
+      this._autoPlayTimeout = null;
+    }
+    this.autoPlayScheduledFor = 0;
+  }
+
+  private stopAutoPlayDurationTracking(): void {
+    if (this.autoPlayLastResumedAt !== null) {
+      this.autoPlayAccumulatedMs += Date.now() - this.autoPlayLastResumedAt;
+      this.autoPlayLastResumedAt = null;
+    }
+  }
+
+  private startAutoPlayDurationTracking(): void {
+    if (this.autoPlayEnabled && !this.autoPlayPaused && this.autoPlayLastResumedAt === null) {
+      this.autoPlayLastResumedAt = Date.now();
+    }
+  }
+
+  private updateLastAnnotation(partial: Partial<MoveAnnotation>): void {
+    if (this.historyAnnotations.length === 0) {
+      return;
+    }
+
+    const lastIndex = this.historyAnnotations.length - 1;
+    this.historyAnnotations[lastIndex] = {
+      ...this.historyAnnotations[lastIndex],
+      ...partial,
+    };
+    this.saveFenToHistory();
+  }
+
+  private publishMoveFeedback(options: {
+    actor: 'player' | 'engine' | 'redo';
+    move: Move;
+    isBrilliant: boolean;
+    qualityLabel?: string | null;
+    bucket?: DisplayMoveBucket | MoveBucket | null;
+    silent?: boolean;
+  }): void {
+    this.recentMoveFeedback = {
+      id: `${Date.now()}_${options.move.san}_${options.actor}`,
+      actor: options.actor,
+      san: options.move.san,
+      qualityLabel: options.qualityLabel ?? null,
+      bucket: options.bucket ?? null,
+      isBrilliant: options.isBrilliant,
+      isCapture: options.move.isCapture(),
+      isCheck: options.move.san.includes('+') || options.move.san.includes('#'),
+      isGameEnd: this.isGameOver,
+      silent: options.silent ?? false,
+      createdAt: Date.now(),
+    };
   }
 
   private undoMoves(count: number): boolean {
