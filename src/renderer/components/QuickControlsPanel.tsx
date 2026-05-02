@@ -7,8 +7,7 @@ import './QuickControlsPanel.css';
 export const QuickControlsPanel: React.FC = observer(() => {
   const busy = boardViewModel.isThinking
     || boardViewModel.isAnalyzingMoves
-    || engineViewModel.isAnalyzing
-    || engineViewModel.isInitializing;
+    || engineViewModel.isMoveLaneBusy;
 
   return (
     <section className="quick-controls-panel">

@@ -107,11 +107,11 @@ export const ControlPanel: React.FC = observer(() => {
   const analysisSource = engineViewModel.lastAnalysisPurpose
     ? (engineViewModel.lastAnalysisFromCache ? 'Cache' : 'Live engine')
     : 'None yet';
-  const engineBusy = isThinking || engineViewModel.isAnalyzing || engineViewModel.isInitializing || boardViewModel.isAnalyzingMoves;
+  const engineBusy = isThinking || engineViewModel.isMoveLaneBusy || boardViewModel.isAnalyzingMoves;
   const engineStatusLabel = engineViewModel.analysisStatusLabel;
   const analysisDetail = boardViewModel.isAnalyzingMoves
     ? 'Evaluating legal moves for arrows'
-    : engineViewModel.isAnalyzing
+    : engineViewModel.isBackgroundLaneBusy || engineViewModel.isMoveLaneBusy
       ? 'Stockfish is working on the current position'
       : engineViewModel.error
         ? 'Review the error below or reset the board to retry'

@@ -258,27 +258,46 @@ test('background analysis does not cancel a valid pending engine move request', 
   localStorageMock.clear();
 
   const { EngineViewModel } = await import('../src/viewmodels');
-  const { stockfishService } = await import('../src/engine/stockfish.service');
+  const { moveStockfishService, analysisStockfishService } = await import('../src/engine/stockfish.service');
   const engine = new EngineViewModel();
 
   const originalInitialize = engine.initialize.bind(engine);
-  const originalAnalyze = stockfishService.analyzePosition.bind(stockfishService);
-  const originalConfigure = stockfishService.configure.bind(stockfishService);
-  const originalStop = stockfishService.stop.bind(stockfishService);
+  const originalMoveAnalyze = moveStockfishService.analyzePosition.bind(moveStockfishService);
+  const originalMoveConfigure = moveStockfishService.configure.bind(moveStockfishService);
+  const originalMoveStop = moveStockfishService.stop.bind(moveStockfishService);
+  const originalAnalysisAnalyze = analysisStockfishService.analyzePosition.bind(analysisStockfishService);
+  const originalAnalysisConfigure = analysisStockfishService.configure.bind(analysisStockfishService);
+  const originalAnalysisStop = analysisStockfishService.stop.bind(analysisStockfishService);
 
-  let releaseAnalysis: (() => void) | null = null;
-  let analyzeCalls = 0;
+  let releaseMoveAnalysis: (() => void) | null = null;
+  let moveAnalyzeCalls = 0;
+  let backgroundAnalyzeCalls = 0;
 
   engine.isInitialized = true;
   engine.initialize = async () => undefined;
-  stockfishService.configure = () => undefined;
-  stockfishService.stop = () => undefined;
-  stockfishService.analyzePosition = async () => {
-    analyzeCalls += 1;
+  moveStockfishService.configure = () => undefined;
+  moveStockfishService.stop = () => undefined;
+  moveStockfishService.analyzePosition = async () => {
+    moveAnalyzeCalls += 1;
     await new Promise<void>((resolve) => {
-      releaseAnalysis = resolve;
+      releaseMoveAnalysis = resolve;
     });
 
+    return [
+      {
+        move: 'e2e4',
+        evaluation: 42,
+        evalLoss: 0,
+        pv: ['e2e4'],
+        multipv: 1,
+        depth: 10,
+      },
+    ];
+  };
+  analysisStockfishService.configure = () => undefined;
+  analysisStockfishService.stop = () => undefined;
+  analysisStockfishService.analyzePosition = async () => {
+    backgroundAnalyzeCalls += 1;
     return [
       {
         move: 'e2e4',
@@ -295,41 +314,45 @@ test('background analysis does not cancel a valid pending engine move request', 
   await new Promise((resolve) => setTimeout(resolve, 0));
   const backgroundPromise = engine.analyzePosition('fen-shared', 10, 2, 'background');
 
-  releaseAnalysis?.();
+  releaseMoveAnalysis?.();
 
   const [engineMoveResult, backgroundResult] = await Promise.all([engineMovePromise, backgroundPromise]);
 
-  assert.equal(analyzeCalls, 1);
+  assert.equal(moveAnalyzeCalls, 1);
+  assert.equal(backgroundAnalyzeCalls, 1);
   assert.equal(engineMoveResult.ignored, false);
   assert.equal(backgroundResult.ignored, false);
   assert.equal(backgroundResult.analyzedFen, 'fen-shared');
 
   engine.initialize = originalInitialize;
-  stockfishService.analyzePosition = originalAnalyze;
-  stockfishService.configure = originalConfigure;
-  stockfishService.stop = originalStop;
+  moveStockfishService.analyzePosition = originalMoveAnalyze;
+  moveStockfishService.configure = originalMoveConfigure;
+  moveStockfishService.stop = originalMoveStop;
+  analysisStockfishService.analyzePosition = originalAnalysisAnalyze;
+  analysisStockfishService.configure = originalAnalysisConfigure;
+  analysisStockfishService.stop = originalAnalysisStop;
 });
 
 test('engine reset clears in-flight analysis state so new requests are not blocked', async () => {
   localStorageMock.clear();
 
   const { EngineViewModel } = await import('../src/viewmodels');
-  const { stockfishService } = await import('../src/engine/stockfish.service');
+  const { analysisStockfishService } = await import('../src/engine/stockfish.service');
   const engine = new EngineViewModel();
 
   const originalInitialize = engine.initialize.bind(engine);
-  const originalAnalyze = stockfishService.analyzePosition.bind(stockfishService);
-  const originalConfigure = stockfishService.configure.bind(stockfishService);
-  const originalStop = stockfishService.stop.bind(stockfishService);
+  const originalAnalyze = analysisStockfishService.analyzePosition.bind(analysisStockfishService);
+  const originalConfigure = analysisStockfishService.configure.bind(analysisStockfishService);
+  const originalStop = analysisStockfishService.stop.bind(analysisStockfishService);
 
   let resolveFirstAnalysis: (() => void) | null = null;
   let analyzeCallCount = 0;
 
   engine.isInitialized = true;
   engine.initialize = async () => undefined;
-  stockfishService.configure = () => undefined;
-  stockfishService.stop = () => undefined;
-  stockfishService.analyzePosition = async () => {
+  analysisStockfishService.configure = () => undefined;
+  analysisStockfishService.stop = () => undefined;
+  analysisStockfishService.analyzePosition = async () => {
     analyzeCallCount += 1;
 
     if (analyzeCallCount === 1) {
@@ -378,9 +401,9 @@ test('engine reset clears in-flight analysis state so new requests are not block
   assert.equal(staleResult.ignored, true);
 
   engine.initialize = originalInitialize;
-  stockfishService.analyzePosition = originalAnalyze;
-  stockfishService.configure = originalConfigure;
-  stockfishService.stop = originalStop;
+  analysisStockfishService.analyzePosition = originalAnalyze;
+  analysisStockfishService.configure = originalConfigure;
+  analysisStockfishService.stop = originalStop;
 });
 
 test('restored move annotations preserve brilliant undo/redo tracking after restart', async () => {
@@ -440,13 +463,13 @@ test('cache-hit indicator reflects whether analysis came from cache', async () =
   localStorageMock.clear();
 
   const { EngineViewModel, featureOptionsViewModel } = await import('../src/viewmodels');
-  const { stockfishService } = await import('../src/engine/stockfish.service');
+  const { analysisStockfishService } = await import('../src/engine/stockfish.service');
   const { analysisCache } = await import('../src/engine/analysisCache');
   const engine = new EngineViewModel();
 
   const originalInitialize = engine.initialize.bind(engine);
-  const originalAnalyze = stockfishService.analyzePosition.bind(stockfishService);
-  const originalConfigure = stockfishService.configure.bind(stockfishService);
+  const originalAnalyze = analysisStockfishService.analyzePosition.bind(analysisStockfishService);
+  const originalConfigure = analysisStockfishService.configure.bind(analysisStockfishService);
 
   featureOptionsViewModel.resetToDefaults();
   featureOptionsViewModel.setOption('useMoveAnalysisCache', true);
@@ -454,8 +477,8 @@ test('cache-hit indicator reflects whether analysis came from cache', async () =
 
   engine.isInitialized = true;
   engine.initialize = async () => undefined;
-  stockfishService.configure = () => undefined;
-  stockfishService.analyzePosition = async () => [
+  analysisStockfishService.configure = () => undefined;
+  analysisStockfishService.analyzePosition = async () => [
     {
       move: 'e2e4',
       evaluation: 35,
@@ -474,8 +497,8 @@ test('cache-hit indicator reflects whether analysis came from cache', async () =
   assert.equal(engine.lastAnalysisFromCache, true);
 
   engine.initialize = originalInitialize;
-  stockfishService.analyzePosition = originalAnalyze;
-  stockfishService.configure = originalConfigure;
+  analysisStockfishService.analyzePosition = originalAnalyze;
+  analysisStockfishService.configure = originalConfigure;
 });
 
 test('persona profiles save and load the current configuration snapshot', async () => {

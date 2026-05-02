@@ -5,6 +5,7 @@
 
 export * from './types';
 export * from './stockfish.service';
+export * from './engineCoordinator';
 export * from './moveClassifier';
 export * from './movePicker';
 export * from './openings';

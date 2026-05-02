@@ -60,7 +60,7 @@ const BucketSlider: React.FC<BucketSliderProps> = ({ bucket, value, onChange, mo
 };
 
 export const ConfigPanel: React.FC = observer(() => {
-  const engineBusy = engineViewModel.isAnalyzing || engineViewModel.isInitializing;
+  const engineBusy = engineViewModel.isMoveLaneBusy;
 
   const handleBucketChange = useCallback((bucket: MoveBucket) => (value: number) => {
     configViewModel.setBucketValue(bucket, value);

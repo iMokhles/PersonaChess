@@ -37,8 +37,7 @@ const ToolbarButton: React.FC<ToolbarButtonProps> = ({ label, shortcut, onClick,
 export const DesktopToolbar: React.FC = observer(() => {
   const engineBusy = boardViewModel.isThinking
     || boardViewModel.isAnalyzingMoves
-    || engineViewModel.isAnalyzing
-    || engineViewModel.isInitializing;
+    || engineViewModel.isMoveLaneBusy;
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {

@@ -9,7 +9,7 @@ import {
   AnalysisSnapshot,
   isStaleAnalysisRequest,
 } from '../engine/analysisSafety';
-import { stockfishService } from '../engine/stockfish.service';
+import { EngineCoordinator, engineCoordinator, EngineLane } from '../engine/engineCoordinator';
 import { classifyMoves, getMoveStats, groupMovesByBucket } from '../engine/moveClassifier';
 import {
   pickBucketLegacy,
@@ -66,6 +66,10 @@ interface ActiveAnalysisRun {
   promise: Promise<PositionAnalysisResult>;
 }
 
+interface EngineViewModelDependencies {
+  coordinator?: EngineCoordinator;
+}
+
 const logger = createDebugLogger('EngineViewModel');
 
 function canUseBrilliantMoveBudget(moveCount: number, fen: string): boolean {
@@ -89,13 +93,14 @@ function canUseBrilliantMoveBudget(moveCount: number, fen: string): boolean {
 export class EngineViewModel {
   isInitialized = false;
   isInitializing = false;
-  isAnalyzing = false;
   analyzedMoves: ClassifiedMove[] = [];
   lastPickedMove: PickedMoveResult | null = null;
   error: string | null = null;
   lastComplexity: PositionComplexityResult | null = null;
   lastAnalysisFromCache = false;
   lastAnalysisPurpose: AnalysisPurpose | null = null;
+  isMoveLaneAnalyzing = false;
+  isBackgroundAnalyzing = false;
   private nextRequestIds: Record<AnalysisPurpose, number> = {
     engineMove: 0,
     background: 0,
@@ -104,9 +109,14 @@ export class EngineViewModel {
     engineMove: 0,
     background: 0,
   };
-  private activeAnalysisRun: ActiveAnalysisRun | null = null;
+  private activeAnalysisRuns: Record<AnalysisPurpose, ActiveAnalysisRun | null> = {
+    engineMove: null,
+    background: null,
+  };
+  private readonly coordinator: EngineCoordinator;
 
-  constructor() {
+  constructor(dependencies: EngineViewModelDependencies = {}) {
+    this.coordinator = dependencies.coordinator ?? engineCoordinator;
     makeAutoObservable(this, {
       initialize: action,
       analyzePosition: action,
@@ -132,7 +142,7 @@ export class EngineViewModel {
         this.error = null;
         this.isInitializing = true;
       });
-      await stockfishService.initialize();
+      await this.coordinator.initialize();
       
       runInAction(() => {
         this.isInitialized = true;
@@ -154,7 +164,8 @@ export class EngineViewModel {
    */
   configure(options: { multiPV?: number; depth?: number }): void {
     logger.debug('Configuring:', options);
-    stockfishService.configure(options);
+    this.coordinator.configure('move', options);
+    this.coordinator.configure('analysis', options);
   }
 
   /**
@@ -167,7 +178,8 @@ export class EngineViewModel {
     purpose: AnalysisPurpose = 'background',
   ): Promise<PositionAnalysisResult> {
     logger.debug('analyzePosition called', { fen, depth, multiPV, purpose });
-    
+    const lane = this.getLaneForPurpose(purpose);
+
     if (!this.isInitialized) {
       await this.initialize();
     }
@@ -177,9 +189,10 @@ export class EngineViewModel {
       const requestId = ++this.nextRequestIds[purpose];
       this.latestRequestIds[purpose] = requestId;
 
-      if (this.activeAnalysisRun) {
-        if (this.activeAnalysisRun.cacheKey === cacheKey) {
-          const sharedResult = await this.activeAnalysisRun.promise;
+      const activeRun = this.activeAnalysisRuns[purpose];
+      if (activeRun) {
+        if (activeRun.cacheKey === cacheKey) {
+          const sharedResult = await activeRun.promise;
           return {
             ...sharedResult,
             requestId,
@@ -189,18 +202,18 @@ export class EngineViewModel {
         }
 
         if (purpose === 'engineMove') {
-          this.latestRequestIds[this.activeAnalysisRun.purpose] += 1;
-          stockfishService.stop();
-          await this.activeAnalysisRun.promise.catch(() => undefined);
+          this.invalidatePurposeRequest(purpose);
+          this.coordinator.stop(lane);
+          await activeRun.promise.catch(() => undefined);
         }
 
         if (purpose === 'background') {
-          await this.activeAnalysisRun.promise.catch(() => undefined);
+          await activeRun.promise.catch(() => undefined);
         }
       }
 
       runInAction(() => {
-        this.isAnalyzing = true;
+        this.setLaneAnalyzing(purpose, true);
         this.error = null;
         if (purpose === 'engineMove') {
           this.analyzedMoves = [];
@@ -215,8 +228,9 @@ export class EngineViewModel {
         cacheKey,
         requestId,
         purpose,
+        lane,
       });
-      this.activeAnalysisRun = {
+      this.activeAnalysisRuns[purpose] = {
         cacheKey,
         fen,
         purpose,
@@ -226,15 +240,15 @@ export class EngineViewModel {
       try {
         return await runPromise;
       } finally {
-        if (this.activeAnalysisRun?.promise === runPromise) {
-          this.activeAnalysisRun = null;
+        if (this.activeAnalysisRuns[purpose]?.promise === runPromise) {
+          this.activeAnalysisRuns[purpose] = null;
         }
       }
     } catch (err) {
       logger.error('Analysis error:', err);
       runInAction(() => {
         this.error = `Analysis failed: ${err}`;
-        this.isAnalyzing = false;
+        this.setLaneAnalyzing(purpose, false);
       });
       throw err;
     }
@@ -334,12 +348,14 @@ export class EngineViewModel {
    */
   stopAnalysis(): void {
     logger.debug('stopAnalysis called');
-    stockfishService.stop();
+    this.coordinator.stop();
     runInAction(() => {
-      this.isAnalyzing = false;
+      this.isMoveLaneAnalyzing = false;
+      this.isBackgroundAnalyzing = false;
     });
     this.invalidatePendingRequests();
-    this.activeAnalysisRun = null;
+    this.activeAnalysisRuns.engineMove = null;
+    this.activeAnalysisRuns.background = null;
   }
 
   /**
@@ -347,7 +363,7 @@ export class EngineViewModel {
    */
   newGame(): void {
     logger.debug('newGame called');
-    stockfishService.newGame();
+    this.coordinator.newGame();
     this.reset();
   }
 
@@ -356,16 +372,18 @@ export class EngineViewModel {
    */
   reset(): void {
     logger.debug('reset called');
-    stockfishService.stop();
+    this.coordinator.stop();
     this.invalidatePendingRequests();
-    this.activeAnalysisRun = null;
+    this.activeAnalysisRuns.engineMove = null;
+    this.activeAnalysisRuns.background = null;
     this.analyzedMoves = [];
     this.lastPickedMove = null;
     this.lastComplexity = null;
     this.lastAnalysisFromCache = false;
     this.lastAnalysisPurpose = null;
     this.error = null;
-    this.isAnalyzing = false;
+    this.isMoveLaneAnalyzing = false;
+    this.isBackgroundAnalyzing = false;
     this.isInitializing = false;
   }
 
@@ -408,7 +426,7 @@ export class EngineViewModel {
    */
   destroy(): void {
     logger.debug('destroy called');
-    stockfishService.destroy();
+    this.coordinator.destroy();
     runInAction(() => {
       this.isInitialized = false;
     });
@@ -421,8 +439,9 @@ export class EngineViewModel {
     cacheKey: string;
     requestId: number;
     purpose: AnalysisPurpose;
+    lane: EngineLane;
   }): Promise<PositionAnalysisResult> {
-    const { fen, depth, multiPV, cacheKey, requestId, purpose } = options;
+    const { fen, depth, multiPV, cacheKey, requestId, purpose, lane } = options;
     let cachedClassifiedMoves: ClassifiedMove[] | undefined;
     let fromCache = false;
     let moves: AnalyzedMove[] = [];
@@ -437,9 +456,9 @@ export class EngineViewModel {
     }
 
     if (moves.length === 0) {
-      stockfishService.configure({ depth, multiPV });
+      this.coordinator.configure(lane, { depth, multiPV });
       logger.debug('Starting analysis...');
-      moves = await stockfishService.analyzePosition(fen);
+      moves = await this.coordinator.analyzePosition(lane, fen);
       logger.debug('Analysis complete, got', moves.length, 'moves');
 
       if (featureOptionsViewModel.useMoveAnalysisCache) {
@@ -474,11 +493,11 @@ export class EngineViewModel {
           this.analyzedMoves = classified;
           this.lastComplexity = complexity;
         }
-        this.isAnalyzing = false;
+        this.setLaneAnalyzing(purpose, false);
       });
-    } else if (this.activeAnalysisRun?.purpose === purpose) {
+    } else if (this.activeAnalysisRuns[purpose]?.purpose === purpose) {
       runInAction(() => {
-        this.isAnalyzing = false;
+        this.setLaneAnalyzing(purpose, false);
       });
     }
 
@@ -502,10 +521,12 @@ export class EngineViewModel {
       return 'Starting engine';
     }
 
-    if (this.isAnalyzing) {
-      return this.lastAnalysisPurpose === 'background'
-        ? 'Running background analysis'
-        : 'Analyzing position';
+    if (this.isMoveLaneAnalyzing) {
+      return 'Analyzing position';
+    }
+
+    if (this.isBackgroundAnalyzing) {
+      return 'Running background analysis';
     }
 
     if (!this.isInitialized) {
@@ -519,9 +540,38 @@ export class EngineViewModel {
     return this.lastAnalysisFromCache ? 'Ready (cache warm)' : 'Ready';
   }
 
+  get isAnalyzing(): boolean {
+    return this.isMoveLaneAnalyzing || this.isBackgroundAnalyzing;
+  }
+
+  get isMoveLaneBusy(): boolean {
+    return this.isInitializing || this.isMoveLaneAnalyzing;
+  }
+
+  get isBackgroundLaneBusy(): boolean {
+    return this.isBackgroundAnalyzing;
+  }
+
   private invalidatePendingRequests(): void {
     this.latestRequestIds.engineMove = ++this.nextRequestIds.engineMove;
     this.latestRequestIds.background = ++this.nextRequestIds.background;
+  }
+
+  private invalidatePurposeRequest(purpose: AnalysisPurpose): void {
+    this.latestRequestIds[purpose] = ++this.nextRequestIds[purpose];
+  }
+
+  private getLaneForPurpose(purpose: AnalysisPurpose): EngineLane {
+    return purpose === 'engineMove' ? 'move' : 'analysis';
+  }
+
+  private setLaneAnalyzing(purpose: AnalysisPurpose, analyzing: boolean): void {
+    if (purpose === 'engineMove') {
+      this.isMoveLaneAnalyzing = analyzing;
+      return;
+    }
+
+    this.isBackgroundAnalyzing = analyzing;
   }
 }
 
